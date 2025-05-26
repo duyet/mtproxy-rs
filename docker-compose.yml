@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  mtproxy-rs:
+    build: .
+    container_name: mtproxy-rs
+    restart: unless-stopped
+    ports:
+      - "443:443"   # MTProxy port
+      - "8888:8888" # Statistics port
+    environment:
+      # Logging level (debug, info, warn, error)
+      - RUST_LOG=info
+      
+      # Server configuration
+      - STATS_PORT=8888
+      - HTTP_PORTS=443
+      - WORKERS=1
+      
+      # Additional arguments (optional)
+      # Uncomment and modify as needed:
+      # - EXTRA_ARGS=--domains example.com --max-connections 1000
+    
+    # Health check to ensure the service is running
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Security: run as non-root user
+    user: "1000:1000"
+    
+    # Network configuration for better IP detection
+    network_mode: "bridge"
+    
+    # Optional: bind mount for persistent configuration
+    volumes:
+      - "./config:/app/config:ro"
+      - "./logs:/app/logs"
+    
+    # Labels for container management
+    labels:
+      - "com.mtproxy.service=proxy"
+      - "com.mtproxy.version=1.0.0"
+
+  # Optional: Prometheus monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: mtproxy-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - "./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      - "prometheus-data:/prometheus"
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    depends_on:
+      - mtproxy-rs
+    profiles:
+      - monitoring
+
+  # Optional: Grafana dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: mtproxy-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - "grafana-data:/var/lib/grafana"
+      - "./monitoring/grafana:/etc/grafana/provisioning:ro"
+    depends_on:
+      - prometheus
+    profiles:
+      - monitoring
+
+volumes:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  default:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16 
