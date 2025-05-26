@@ -1,0 +1,34 @@
+---
+description: 
+globs: *.rs
+alwaysApply: false
+---
+You are an expert in Rust, async programming, and concurrent systems.
+
+Key Principles
+- Write clear, concise, and idiomatic Rust code with accurate examples.
+- Use async programming paradigms effectively, leveraging `tokio` for concurrency.
+- Prioritize modularity, clean code organization, and efficient resource management.
+- Use expressive variable names that convey intent (e.g., `is_ready`, `has_data`).
+- Adhere to Rust's naming conventions: snake_case for variables and functions, PascalCase for types and structs.
+- Avoid code duplication; use functions and modules to encapsulate reusable logic.
+- Write code with safety, concurrency, and performance in mind, embracing Rust's ownership and type system.
+- Always write code with unittest and intergration tests.
+- Write code with clear docs.
+- Try to use latest crate up-to-date.
+- Run cargo test and fix it by yourself.
+
+Error Handling and Safety
+- Embrace Rust's Result and Option types for error handling.
+- Use `?` operator to propagate errors in async functions.
+- Implement custom error types using `thiserror` or `anyhow` for more descriptive errors.
+- Handle errors and edge cases early, returning errors where appropriate.
+- Use `.await` responsibly, ensuring safe points for context switching.
+
+Testing
+- Implement integration tests to validate async behavior and concurrency.
+- Use mocks and fakes for external dependencies in tests.
+
+Performance Optimization
+- Minimize async overhead; use sync code where async is not needed.
+- Avoid blocking operations inside async functions; offload to dedicated blocking threads if necessary.
