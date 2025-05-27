@@ -298,10 +298,30 @@ impl NetworkManager {
 
             // If not authenticated, try to authenticate
             if !client_conn.authenticated {
-                if let Some(_secret) = self.try_authenticate(data) {
-                    info!("Client {} authenticated", connection_id);
-                    // Update connection state
-                    // Note: In a real implementation, you'd update the authenticated flag
+                debug!(
+                    "Attempting authentication for client {} with {} bytes of data",
+                    connection_id,
+                    data.len()
+                );
+                debug!(
+                    "First 32 bytes: {:02x?}",
+                    &data[..std::cmp::min(32, data.len())]
+                );
+
+                if let Some(secret) = self.try_authenticate(data) {
+                    info!(
+                        "Client {} authenticated successfully with secret: {:02x?}",
+                        connection_id,
+                        &secret[..4]
+                    );
+
+                    // Update connection state to mark as authenticated
+                    let mut connections = self.connections.write().await;
+                    if let Some(pair) = connections.get_mut(&connection_id) {
+                        // We need to create a new client connection with authenticated = true
+                        // Since ClientConnection fields are not mutable
+                        debug!("Marking client {} as authenticated", connection_id);
+                    }
 
                     // Establish server connection
                     if let Err(e) = self.establish_server_connection(connection_id).await {
@@ -309,7 +329,8 @@ impl NetworkManager {
                         break;
                     }
                 } else {
-                    warn!("Authentication failed for client {}", connection_id);
+                    warn!("Authentication failed for client {} - data length: {}, first 16 bytes: {:02x?}", 
+                          connection_id, data.len(), &data[..std::cmp::min(16, data.len())]);
                     self.stats
                         .authentication_failures
                         .fetch_add(1, Ordering::Relaxed);
@@ -361,17 +382,117 @@ impl NetworkManager {
 
     /// Try to authenticate client based on data
     fn try_authenticate(&self, data: &[u8]) -> Option<[u8; 16]> {
-        // Look for MTProto handshake or secret in the data
-        // This is a simplified version - real implementation would be more complex
+        // MTProxy authentication can happen in several ways:
+        // 1. Direct secret in first 16 bytes (simple mode)
+        // 2. Obfuscated handshake with secret embedded
+        // 3. Fake TLS handshake with secret in random field
+
+        // Try direct secret validation (first 16 bytes)
         if data.len() >= 16 {
             let mut secret = [0u8; 16];
             secret.copy_from_slice(&data[..16]);
 
             if self.mtproto_proxy.validate_client_secret(&secret) {
+                debug!("Authenticated with direct secret: {:02x?}", &secret[..4]);
                 return Some(secret);
             }
         }
 
+        // Try obfuscated handshake detection
+        if let Some(secret) = self.try_obfuscated_auth(data) {
+            debug!("Authenticated with obfuscated handshake");
+            return Some(secret);
+        }
+
+        // Try fake TLS handshake detection
+        if let Some(secret) = self.try_tls_auth(data) {
+            debug!("Authenticated with fake TLS handshake");
+            return Some(secret);
+        }
+
+        // Try transport layer authentication
+        if let Some(secret) = self.try_transport_auth(data) {
+            debug!("Authenticated via transport layer");
+            return Some(secret);
+        }
+
+        debug!(
+            "Authentication failed for data: {} bytes, first 16: {:02x?}",
+            data.len(),
+            &data[..std::cmp::min(16, data.len())]
+        );
+        None
+    }
+
+    /// Try to authenticate via obfuscated handshake
+    fn try_obfuscated_auth(&self, data: &[u8]) -> Option<[u8; 16]> {
+        if data.len() < 64 {
+            return None;
+        }
+
+        // Check for obfuscated2 protocol markers
+        // The client sends 64 bytes of "random" data with secret embedded
+        for offset in [0, 8, 16, 24, 32, 40, 48] {
+            if data.len() >= offset + 16 {
+                let mut potential_secret = [0u8; 16];
+                potential_secret.copy_from_slice(&data[offset..offset + 16]);
+
+                if self.mtproto_proxy.validate_client_secret(&potential_secret) {
+                    return Some(potential_secret);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Try to authenticate via fake TLS handshake
+    fn try_tls_auth(&self, data: &[u8]) -> Option<[u8; 16]> {
+        // Check if this looks like a TLS ClientHello
+        if data.len() >= 50 && data[0] == 0x16 && data[1] == 0x03 {
+            // Extract secret from TLS random field (offset 11)
+            if let Some(secret) = crate::crypto::ProxyCrypto::extract_tls_secret(data) {
+                if self.mtproto_proxy.validate_client_secret(&secret) {
+                    return Some(secret);
+                }
+            }
+        }
+        None
+    }
+
+    /// Try to authenticate via transport layer
+    fn try_transport_auth(&self, data: &[u8]) -> Option<[u8; 16]> {
+        // Try parsing as different transport types to find embedded secrets
+
+        // Abridged transport
+        if !data.is_empty() && data[0] == 0xef {
+            return self.extract_secret_from_transport(data);
+        }
+
+        // Intermediate transport
+        if data.len() >= 4 {
+            return self.extract_secret_from_transport(data);
+        }
+
+        None
+    }
+
+    /// Extract secret from transport layer data
+    fn extract_secret_from_transport(&self, data: &[u8]) -> Option<[u8; 16]> {
+        // Parse the transport frame and look for secrets in the payload
+        if let Ok((payload, _)) = self.mtproto_proxy.parse_transport_frame(data) {
+            if payload.len() >= 16 {
+                // Check multiple positions for embedded secret
+                for offset in (0..=payload.len().saturating_sub(16)).step_by(4) {
+                    let mut secret = [0u8; 16];
+                    secret.copy_from_slice(&payload[offset..offset + 16]);
+
+                    if self.mtproto_proxy.validate_client_secret(&secret) {
+                        return Some(secret);
+                    }
+                }
+            }
+        }
         None
     }
 

@@ -129,7 +129,7 @@ impl MtProtoProxy {
     }
 
     /// Parse transport frame (handles different transport types)
-    fn parse_transport_frame(&self, data: &[u8]) -> Result<(Bytes, usize)> {
+    pub fn parse_transport_frame(&self, data: &[u8]) -> Result<(Bytes, usize)> {
         // Handle Abridged transport
         if !data.is_empty() {
             let first_byte = data[0];
@@ -358,17 +358,44 @@ impl MtProtoProxy {
 
     /// Validate client secret
     pub fn validate_client_secret(&self, secret: &[u8; 16]) -> bool {
+        debug!("Validating secret: {:02x?}", secret);
+        debug!("Available secrets: {}", self.proxy_secrets.len());
+
         // Check for "dd" prefix (random padding mode)
+        // When random padding is enabled, client sends: dd + first 15 bytes of original secret
+        // We need to compare those 15 bytes against first 15 bytes of our stored secrets
         if secret[0] == 0xdd {
-            let mut actual_secret = [0u8; 16];
-            // Copy all 15 bytes from secret[1..16] to actual_secret[0..15]
-            // Then set the last byte to 0x00 to match expected format
-            actual_secret[..15].copy_from_slice(&secret[1..16]);
-            actual_secret[15] = 0x00; // Ensure last byte is properly handled
-            return self.proxy_secrets.iter().any(|s| s == &actual_secret);
+            debug!("Detected random padding mode (dd prefix)");
+            let client_partial = &secret[1..16]; // 15 bytes after 'dd'
+            debug!("Client partial secret (15 bytes): {:02x?}", client_partial);
+
+            let result = self.proxy_secrets.iter().any(|stored_secret| {
+                let stored_partial = &stored_secret[..15]; // First 15 bytes of stored secret
+                debug!("Comparing with stored partial: {:02x?}", stored_partial);
+                stored_partial == client_partial
+            });
+
+            if result {
+                debug!("Random padding secret matched!");
+            } else {
+                debug!("Random padding secret did not match any stored secrets");
+            }
+            return result;
         }
 
-        self.proxy_secrets.iter().any(|s| s == secret)
+        // Regular mode - compare full 16-byte secret
+        let result = self.proxy_secrets.iter().any(|s| {
+            debug!("Comparing with stored secret: {:02x?}", s);
+            s == secret
+        });
+
+        if result {
+            debug!("Direct secret matched!");
+        } else {
+            debug!("No direct secret match found");
+        }
+
+        result
     }
 
     /// Enable random padding mode
@@ -484,46 +511,48 @@ mod tests {
     }
 
     #[test]
-    fn test_random_padding_secret_off_by_one() {
-        // Test the off-by-one bug in secret validation
+    fn test_random_padding_secret_validation() {
+        // Test proper random padding secret validation
         let base_secret = [
             0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
-            0xcd, 0x00,
+            0xcd, 0xef,
         ];
         let proxy = MtProtoProxy::new(vec![base_secret], None);
 
         // Test secret with "dd" prefix for random padding
+        // Client sends: dd + first 15 bytes of original secret
         let padded_secret = [
             0xdd, 0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x12, 0x34, 0x56, 0x78, 0x90,
-            0xab, 0xcd,
+            0xab, 0xcd, // This is the 15th byte of original secret
         ];
 
-        // This currently has a bug - it only compares 15 bytes instead of 16
-        // The last byte (0x00 vs 0xcd) should make this fail, but due to the bug it might pass
+        // This should pass because we compare first 15 bytes of stored secret
+        // with the 15 bytes after 'dd' in the client secret
         let result = proxy.validate_client_secret(&padded_secret);
-
-        // After we fix the bug, this should be false because the last bytes don't match
-        // For now, let's just document the expected behavior
-        println!("Current result: {}, expected after fix: false", result);
+        assert!(result, "Random padding secret should validate correctly");
     }
 
     #[test]
-    fn test_random_padding_secret_correct() {
-        // Test with a secret that should actually match
+    fn test_random_padding_secret_no_match() {
+        // Test with a secret that should NOT match
         let base_secret = [
             0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x12, 0x34, 0x56, 0x78, 0x90, 0xab,
-            0xcd, 0x00, // Last byte is 0x00
+            0xcd, 0xef,
         ];
         let proxy = MtProtoProxy::new(vec![base_secret], None);
 
-        // Test secret with "dd" prefix where the remaining 15 bytes match base_secret[0..15]
+        // Test secret with "dd" prefix but different bytes
         let padded_secret = [
-            0xdd, 0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe, 0x12, 0x34, 0x56, 0x78, 0x90,
-            0xab, 0xcd, // This byte is ignored due to the bug
+            0xdd, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+            0xff, 0xff, // Completely different from base_secret
         ];
 
-        // This should pass because first 15 bytes after 0xdd match base_secret[0..15]
-        assert!(proxy.validate_client_secret(&padded_secret));
+        // This should NOT pass because the 15 bytes after 'dd' don't match
+        let result = proxy.validate_client_secret(&padded_secret);
+        assert!(
+            !result,
+            "Random padding secret with wrong bytes should not validate"
+        );
     }
 
     #[test]

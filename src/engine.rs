@@ -141,7 +141,7 @@ impl Engine {
                 .iter()
                 .filter_map(|&port| {
                     // Prevent port overflow - max valid port is 65535
-                    let offset = worker_id as u32 * 1000;
+                    let offset = worker_id * 1000;
                     let new_port = port as u32 + offset;
                     if new_port > 65535 {
                         warn!(
@@ -270,6 +270,33 @@ impl Engine {
                 }
             }
 
+            info!("");
+            info!("📱 To use this proxy in Telegram:");
+            info!("   1. Copy one of the connection URLs above");
+            info!("   2. Open Telegram app");
+            info!("   3. Paste the URL in any chat");
+            info!("   4. Tap the URL to configure proxy");
+            info!("");
+            info!("🔧 Alternative setup:");
+            info!("   Server: {}", server_address);
+            info!("   Port: {}", self.args.http_ports.first().unwrap_or(&443));
+            info!(
+                "   Secret: {}",
+                self.args.secrets.first().unwrap_or(&"N/A".to_string())
+            );
+            info!("");
+            info!("🛡️  Random Padding (for ISP bypass):");
+            if let Some(secret) = self.args.secrets.first() {
+                for &port in &self.args.http_ports {
+                    let padded_url = format!(
+                        "tg://proxy?server={}&port={}&secret=dd{}",
+                        server_address, port, secret
+                    );
+                    info!("   Padded URL: {}", padded_url);
+                }
+            }
+            info!("   (Random padding helps avoid ISP detection)");
+
             // Asynchronously update with public IP if needed
             if server_address == "YOUR_SERVER_IP"
                 || crate::utils::network::is_private_ip(
@@ -291,6 +318,13 @@ impl Engine {
                                     public_ip, port, secret
                                 );
                                 info!("  Secret {} URL: {}", i + 1, url);
+
+                                // Also provide random padding version
+                                let padded_url = format!(
+                                    "tg://proxy?server={}&port={}&secret=dd{}",
+                                    public_ip, port, secret
+                                );
+                                info!("  Secret {} Padded URL: {}", i + 1, padded_url);
                             }
                         }
                     }
@@ -464,7 +498,7 @@ pub mod utils {
 
             // Check for potential port overflow with workers
             if args.workers > 1 {
-                let max_worker_offset = (args.workers - 1) as u32 * 1000;
+                let max_worker_offset = (args.workers - 1) * 1000;
                 let max_port = port as u32 + max_worker_offset;
                 if max_port > 65535 {
                     anyhow::bail!(

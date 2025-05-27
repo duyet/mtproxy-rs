@@ -369,6 +369,11 @@ async fn main() -> Result<()> {
 
         // Convert binary secret to hex string for compatibility with existing code
         let aes_secret_hex = hex::encode(aes_secret);
+        info!(
+            "Loaded AES secret from file: {} bytes -> hex: {}",
+            aes_secret.len(),
+            aes_secret_hex
+        );
         args.secrets.push(aes_secret_hex);
         info!(
             "Loaded AES secret from file: {} ({} bytes, using first 16)",
@@ -376,29 +381,60 @@ async fn main() -> Result<()> {
             aes_secret_raw.len()
         );
     } else if args.secrets.is_empty() {
-        // Auto-download proxy secret if no secrets specified and no AES file provided
-        info!("No secrets specified, auto-downloading proxy secret from Telegram servers...");
-        let aes_secret_raw = Config::download_proxy_secret()
-            .await
-            .context("Failed to download proxy secret from Telegram servers")?;
+        // Try to auto-download proxy secret if no secrets specified and no AES file provided
+        info!("No secrets specified, attempting to auto-download proxy secret from Telegram servers...");
 
-        // Take only the first 16 bytes (like the C version)
-        let aes_secret = if aes_secret_raw.len() >= 16 {
-            &aes_secret_raw[..16]
+        match Config::download_proxy_secret().await {
+            Ok(aes_secret_raw) => {
+                info!("Downloaded raw secret: {} bytes", aes_secret_raw.len());
+                info!(
+                    "Downloaded secret bytes: {:02x?}",
+                    &aes_secret_raw[..std::cmp::min(32, aes_secret_raw.len())]
+                );
+
+                // Take only the first 16 bytes (like the C version)
+                let aes_secret = if aes_secret_raw.len() >= 16 {
+                    &aes_secret_raw[..16]
+                } else {
+                    anyhow::bail!(
+                        "Downloaded secret must contain at least 16 bytes, got {}",
+                        aes_secret_raw.len()
+                    );
+                };
+
+                // Convert binary secret to hex string for compatibility with existing code
+                let aes_secret_hex = hex::encode(aes_secret);
+                info!("Converted secret to hex: {}", aes_secret_hex);
+                args.secrets.push(aes_secret_hex);
+                info!(
+                    "Downloaded proxy secret ({} bytes, using first 16)",
+                    aes_secret_raw.len()
+                );
+            }
+            Err(e) => {
+                warn!("Failed to auto-download proxy secret: {}", e);
+                warn!("Auto-download endpoints may not be available. Generating a random secret for testing...");
+
+                // Generate a random secret for testing/development
+                let random_secret = generate_key();
+                warn!("Generated random secret: {}", random_secret);
+                warn!("⚠️  WARNING: This is a random secret for testing only!");
+                warn!("⚠️  For production use, specify a secret with -S or --aes-pwd");
+
+                args.secrets.push(random_secret);
+            }
+        }
+    }
+
+    // Debug log all configured secrets
+    info!("Final configured secrets:");
+    for (i, secret) in args.secrets.iter().enumerate() {
+        info!("  Secret {}: {} (length: {})", i + 1, secret, secret.len());
+        if let Ok(decoded) = hex::decode(secret) {
+            info!("    Decoded: {:02x?}", decoded);
         } else {
-            anyhow::bail!(
-                "Downloaded secret must contain at least 16 bytes, got {}",
-                aes_secret_raw.len()
-            );
-        };
-
-        // Convert binary secret to hex string for compatibility with existing code
-        let aes_secret_hex = hex::encode(aes_secret);
-        args.secrets.push(aes_secret_hex);
-        info!(
-            "Downloaded proxy secret ({} bytes, using first 16)",
-            aes_secret_raw.len()
-        );
+            warn!("    Invalid hex format!");
+        }
     }
 
     // Setup signal handlers

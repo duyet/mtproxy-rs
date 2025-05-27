@@ -58,7 +58,7 @@ RUN chmod +x /usr/local/bin/mtproxy-rs
 WORKDIR /app
 
 # Copy startup script
-COPY --chown=mtproxy:mtproxy docker-entrypoint.sh /app/docker-entrypoint.sh
+COPY --chown=mtproxy:mtproxy docker-entrypoint.sh /docker-entrypoint.sh
 
 # Switch to non-root user
 USER mtproxy
@@ -77,4 +77,4 @@ ENV RUST_LOG=info \
     WORKERS=1
 
 # Use the startup script as the default command
-CMD ["/app/docker-entrypoint.sh"] 
+CMD ["/docker-entrypoint.sh"] 

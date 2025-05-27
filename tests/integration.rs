@@ -174,7 +174,7 @@ timeout 10;
     #[test]
     fn test_command_line_parsing_simulation() {
         // Simulate command line argument parsing (like C version)
-        let simulated_args = vec![
+        let simulated_args = [
             "mtproxy-rs",
             "-p",
             "8888",
