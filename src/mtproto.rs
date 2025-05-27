@@ -32,6 +32,12 @@ pub struct ConnectionState {
     pub sequence_number: i32,
 }
 
+impl Default for ConnectionState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConnectionState {
     pub fn new() -> Self {
         Self {

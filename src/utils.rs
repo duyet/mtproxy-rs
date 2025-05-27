@@ -656,7 +656,7 @@ mod tests {
             Ok(local_ip) => {
                 println!("Local IP: {}", local_ip);
                 println!("Is private: {}", network::is_private_ip(&local_ip));
-                assert!(local_ip.to_string().len() > 0);
+                assert!(!local_ip.to_string().is_empty());
             }
             Err(e) => {
                 println!("Failed to get local IP: {}", e);
@@ -671,7 +671,7 @@ mod tests {
                 println!("   Is private: {}", network::is_private_ip(&public_ip));
 
                 // Verify it's a valid IP address
-                assert!(public_ip.to_string().len() > 0);
+                assert!(!public_ip.to_string().is_empty());
 
                 // For most internet connections, the public IP should not be private
                 // (though this might fail in some test environments)

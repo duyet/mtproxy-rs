@@ -27,6 +27,12 @@ pub struct ConnectionStats {
     pub last_activity: AtomicU64,
 }
 
+impl Default for ConnectionStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConnectionStats {
     pub fn new() -> Self {
         Self {

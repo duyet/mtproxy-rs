@@ -533,7 +533,7 @@ mod tests {
         // Check default values
         assert_eq!(matches.get_one::<u16>("stats_port"), Some(&8888));
         assert_eq!(matches.get_one::<u32>("workers"), Some(&1));
-        assert_eq!(matches.get_flag("http_stats"), false);
+        assert!(!matches.get_flag("http_stats"));
     }
 
     #[test]
@@ -696,7 +696,7 @@ mod tests {
             matches.get_one::<String>("aes_pwd_file"),
             Some(&"/tmp/secret.key".to_string())
         );
-        assert_eq!(matches.get_flag("http_stats"), true);
+        assert!(matches.get_flag("http_stats"));
         assert_eq!(
             matches.get_one::<String>("config"),
             Some(&"config.conf".to_string())
