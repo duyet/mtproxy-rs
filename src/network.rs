@@ -57,12 +57,17 @@ pub struct ServerConnection {
     pub stats: Arc<ConnectionStats>,
 }
 
+const MAX_CONNECTIONS_PER_IP: u64 = 10;
+const MAX_GLOBAL_CONNECTIONS: u64 = 10000;
+
 /// Network manager for handling all connections
 pub struct NetworkManager {
     /// Connection counter for generating unique IDs
     connection_counter: AtomicU64,
     /// Active connection pairs
     connections: Arc<RwLock<HashMap<ConnectionId, Arc<ConnectionPair>>>>,
+    /// Connections per IP tracking
+    connections_per_ip: Arc<RwLock<HashMap<std::net::IpAddr, u64>>>,
     /// MTProto proxy instance
     mtproto_proxy: Arc<MtProtoProxy>,
     /// Configuration
@@ -74,6 +79,8 @@ pub struct NetworkManager {
     shutdown_tx: broadcast::Sender<()>,
     /// Statistics
     stats: Arc<NetworkStats>,
+    /// Rate limiter
+    rate_limiter: Arc<crate::utils::rate_limit::TokenBucket>,
 }
 
 #[derive(Debug, Default)]
@@ -88,18 +95,20 @@ pub struct NetworkStats {
 
 impl NetworkManager {
     pub fn new(config: Arc<Config>, mtproto_proxy: Arc<MtProtoProxy>) -> Self {
-        let (forward_tx, forward_rx) = mpsc::channel(10000);
+        let (forward_tx, forward_rx) = mpsc::channel(1000); // Bounded channel
         let (shutdown_tx, _) = broadcast::channel(16);
 
         Self {
             connection_counter: AtomicU64::new(1),
             connections: Arc::new(RwLock::new(HashMap::new())),
+            connections_per_ip: Arc::new(RwLock::new(HashMap::new())),
             mtproto_proxy,
             config,
             forward_tx,
             forward_rx: Arc::new(tokio::sync::Mutex::new(forward_rx)),
             shutdown_tx,
             stats: Arc::new(NetworkStats::default()),
+            rate_limiter: Arc::new(crate::utils::rate_limit::TokenBucket::new(100, 10)),
         }
     }
 
@@ -167,8 +176,35 @@ impl NetworkManager {
         Ok(())
     }
 
+    /// Check if we can accept a new connection from this IP
+    async fn can_accept_connection(&self, remote_ip: std::net::IpAddr) -> bool {
+        // Check global connection limit
+        let total_connections = self.stats.active_connections.load(Ordering::Relaxed);
+        if total_connections >= MAX_GLOBAL_CONNECTIONS {
+            return false;
+        }
+
+        // Check per-IP limit
+        let connections_per_ip = self.connections_per_ip.read().await;
+        let ip_connections = connections_per_ip.get(&remote_ip).unwrap_or(&0);
+        if *ip_connections >= MAX_CONNECTIONS_PER_IP {
+            return false;
+        }
+
+        // Check rate limit
+        self.rate_limiter.try_consume(1)
+    }
+
     /// Handle new client connection
     async fn handle_new_client(&self, stream: TcpStream, remote_addr: SocketAddr) {
+        let remote_ip = remote_addr.ip();
+
+        // Check if we can accept this connection
+        if !self.can_accept_connection(remote_ip).await {
+            warn!("Connection rejected from {} due to limits", remote_ip);
+            return;
+        }
+
         let connection_id = self.connection_counter.fetch_add(1, Ordering::Relaxed);
 
         // Get local address
@@ -607,12 +643,14 @@ impl NetworkManager {
         NetworkManager {
             connection_counter: AtomicU64::new(self.connection_counter.load(Ordering::Relaxed)),
             connections: self.connections.clone(),
+            connections_per_ip: self.connections_per_ip.clone(),
             mtproto_proxy: self.mtproto_proxy.clone(),
             config: self.config.clone(),
             forward_tx: self.forward_tx.clone(),
             forward_rx: self.forward_rx.clone(),
             shutdown_tx: self.shutdown_tx.clone(),
             stats: self.stats.clone(),
+            rate_limiter: self.rate_limiter.clone(),
         }
     }
 }

@@ -144,7 +144,10 @@ impl Engine {
                     let offset = worker_id as u32 * 1000;
                     let new_port = port as u32 + offset;
                     if new_port > 65535 {
-                        warn!("Worker {} port {} + {} would overflow, skipping", worker_id, port, offset);
+                        warn!(
+                            "Worker {} port {} + {} would overflow, skipping",
+                            worker_id, port, offset
+                        );
                         None
                     } else {
                         Some(new_port as u16)
@@ -458,15 +461,17 @@ pub mod utils {
             if port < 1024 && !is_running_as_root() {
                 anyhow::bail!("Port {} requires root privileges", port);
             }
-            
+
             // Check for potential port overflow with workers
             if args.workers > 1 {
                 let max_worker_offset = (args.workers - 1) as u32 * 1000;
                 let max_port = port as u32 + max_worker_offset;
                 if max_port > 65535 {
                     anyhow::bail!(
-                        "Port {} with {} workers would overflow (max port: {})", 
-                        port, args.workers, max_port
+                        "Port {} with {} workers would overflow (max port: {})",
+                        port,
+                        args.workers,
+                        max_port
                     );
                 }
             }
@@ -624,8 +629,8 @@ volumes:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::io::Write;
+    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_engine_creation() {
@@ -669,11 +674,7 @@ mod tests {
     async fn test_worker_port_overflow() {
         let temp_dir = tempdir().unwrap();
         let config_file = temp_dir.path().join("test.conf");
-        std::fs::write(
-            &config_file,
-            "default 1;\nproxy_for 1 149.154.175.50:8888;",
-        )
-        .unwrap();
+        std::fs::write(&config_file, "default 1;\nproxy_for 1 149.154.175.50:8888;").unwrap();
 
         // Test with ports that would overflow when workers are added
         let args = ProxyArgs {
@@ -695,7 +696,7 @@ mod tests {
 
         let config = Config::load(&config_file).await.unwrap();
         let engine = Engine::new(args, config).await.unwrap();
-        
+
         // This should fail gracefully, not overflow
         let result = engine.start_workers().await;
         // For now, this will likely succeed but shouldn't cause overflow
@@ -707,11 +708,7 @@ mod tests {
     async fn test_multiple_workers_valid_ports() {
         let temp_dir = tempdir().unwrap();
         let config_file = temp_dir.path().join("test.conf");
-        std::fs::write(
-            &config_file,
-            "default 1;\nproxy_for 1 149.154.175.50:8888;",
-        )
-        .unwrap();
+        std::fs::write(&config_file, "default 1;\nproxy_for 1 149.154.175.50:8888;").unwrap();
 
         let args = ProxyArgs {
             username: None,
@@ -732,7 +729,7 @@ mod tests {
 
         let config = Config::load(&config_file).await.unwrap();
         let engine = Engine::new(args, config).await.unwrap();
-        
+
         let result = engine.start_workers().await;
         assert!(result.is_ok());
     }

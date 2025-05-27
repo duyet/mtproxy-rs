@@ -378,11 +378,15 @@ mod tests {
             (Ok(enc1), Ok(enc2)) => {
                 // With random salts, the first 16 bytes (salt) should be different
                 // This proves the security fix is working
-                assert_ne!(&enc1[..16], &enc2[..16], "Salts should be different (fix working)");
-                
+                assert_ne!(
+                    &enc1[..16],
+                    &enc2[..16],
+                    "Salts should be different (fix working)"
+                );
+
                 // The nonce should also be different (bytes 16-28)
                 assert_ne!(&enc1[16..28], &enc2[16..28], "Nonces should be different");
-                
+
                 println!("Security fix confirmed: Random salts are being generated");
                 println!("Salt 1: {:?}", &enc1[..16]);
                 println!("Salt 2: {:?}", &enc2[..16]);
@@ -434,7 +438,10 @@ mod tests {
             Ok(encrypted) => {
                 // Try to decrypt with wrong password
                 let result = ConfigCrypto::decrypt(&encrypted, wrong_password);
-                assert!(result.is_err(), "Decryption should fail with wrong password");
+                assert!(
+                    result.is_err(),
+                    "Decryption should fail with wrong password"
+                );
             }
             Err(_) => {
                 println!("Encryption not functional, skipping wrong password test");
