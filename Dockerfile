@@ -2,7 +2,9 @@
 FROM rust:1.87-slim AS builder
 
 # Install dependencies for building
-RUN apt-get update && apt-get install -y \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     libc6-dev \
@@ -21,19 +23,25 @@ COPY Cargo.toml ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
 # Build dependencies (this layer will be cached if dependencies don't change)
-RUN cargo build --release && rm -rf src
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo build --release && rm -rf src
 
 # Copy the source code
 COPY src ./src
 
 # Build the application with optimizations
-RUN cargo build --release
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/app/target \
+    cargo build --release
 
 # Use a minimal runtime image
 FROM debian:bookworm-slim
 
 # Install runtime dependencies for IP detection and networking
-RUN apt-get update && apt-get install -y \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     net-tools \
