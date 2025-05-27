@@ -58,7 +58,7 @@ fn create_test_args(port: u16) -> ProxyArgs {
     ProxyArgs {
         username: None,
         stats_port: 18888, // Use different port to avoid conflicts
-        http_ports: vec![port],
+        port: vec![port],
         secrets: vec![TEST_SECRET.to_string()],
         proxy_tag: None,
         domains: Vec::new(),

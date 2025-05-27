@@ -23,17 +23,13 @@ COPY Cargo.toml ./
 RUN mkdir src && echo "fn main() {}" > src/main.rs
 
 # Build dependencies (this layer will be cached if dependencies don't change)
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
-    cargo build --release && rm -rf src
+RUN cargo build --release && rm -rf src
 
 # Copy the source code
 COPY src ./src
 
 # Build the application with optimizations
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/app/target \
-    cargo build --release
+RUN cargo build --release
 
 # Use a minimal runtime image
 FROM debian:bookworm-slim
@@ -81,7 +77,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
 # Set environment variables with defaults
 ENV RUST_LOG=info \
     STATS_PORT=8888 \
-    HTTP_PORTS=443 \
+    PORT=443 \
     WORKERS=1
 
 # Use the startup script as the default command

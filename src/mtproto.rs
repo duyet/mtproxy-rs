@@ -367,6 +367,11 @@ impl MtProtoProxy {
         debug!("Validating secret: {:02x?}", secret);
         debug!("Available secrets: {}", self.proxy_secrets.len());
 
+        // Print stored secrets for debugging
+        for (i, stored_secret) in self.proxy_secrets.iter().enumerate() {
+            debug!("Stored secret {}: {:02x?}", i, stored_secret);
+        }
+
         // Check for "dd" prefix (random padding mode)
         // When random padding is enabled, client sends: dd + first 15 bytes of original secret
         // We need to compare those 15 bytes against first 15 bytes of our stored secrets

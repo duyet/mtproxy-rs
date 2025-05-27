@@ -1,7 +1,7 @@
-/// Unit-style functionality tests for MTProxy-RS
-///
-/// These tests verify basic functionality without requiring full integration setup.
-/// For full integration tests with real client connections, see integration_client_connections.rs
+//! Unit-style functionality tests for MTProxy-RS
+//!
+//! These tests verify basic functionality without requiring full integration setup.
+//! For full integration tests with real client connections, see integration_client_connections.rs
 
 #[cfg(test)]
 mod tests {
@@ -245,7 +245,7 @@ mod tests {
             let mut i = 0;
             while i < args.len() {
                 match args[i] {
-                    "-H" | "--http-ports" => {
+                    "-H" | "--port" => {
                         if i + 1 < args.len() {
                             if let Ok(port) = args[i + 1].parse::<u16>() {
                                 result.ports.push(port);

@@ -14,7 +14,7 @@ services:
       
       # Server configuration
       - STATS_PORT=8888
-      - HTTP_PORTS=443
+      - PORT=443
       - WORKERS=1
       
       # Additional arguments (optional)

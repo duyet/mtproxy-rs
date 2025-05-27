@@ -17,7 +17,7 @@ A high-performance Telegram MTProxy implementation in Rust.
 
 ## Quick Start
 
-### Docker (Recommended)
+### Docker
 
 ```bash
 # Generate a secret
@@ -31,8 +31,11 @@ docker run -d -p 443:443 -p 8888:8888 \
 
 # Or generate a key with the built-in tool
 docker run --rm ghcr.io/duyet/mtproxy-rs --genkey
+```
 
-# Or with docker-compose
+### Docker Compose
+
+```bash
 git clone https://github.com/duyet/mtproxy-rs
 cd mtproxy-rs
 docker-compose up -d
@@ -70,7 +73,7 @@ Replace YOUR_SERVER_IP with your actual server IP and YOUR_SECRET with your gene
 mtproxy-rs [OPTIONS]
 
 Key options:
-  -H, --http-ports <PORTS>    Proxy ports (default: 443)
+  -H, --port <PORT>          Port to listen for MTProto connections (can be specified multiple times, default: 443, can also be set via env PORT)
   -p, --stats-port <PORT>     Stats port (default: 8888)
   -S, --secret <SECRET>       16-byte secret in hex
   -M, --slaves <NUM>          Worker processes (default: 1)
@@ -111,25 +114,6 @@ EOF
 sudo systemctl enable --now mtproxy-rs
 ```
 
-### Docker Production
-
-```yaml
-version: '3.8'
-services:
-  mtproxy-rs:
-    image: ghcr.io/duyet/mtproxy-rs:latest
-    restart: unless-stopped
-    ports:
-      - "443:443"
-    environment:
-      - RUST_LOG=warn
-      - EXTRA_ARGS=-S YOUR_SECRET -M 4
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-```
-
 ## Configuration
 
 Download Telegram configuration files:
@@ -142,16 +126,6 @@ curl -s https://core.telegram.org/getProxySecret > proxy-secret
 # Run with config files
 ./mtproxy-rs -u nobody -p 8888 -H 443 -S $SECRET --aes-pwd proxy-secret proxy-multi.conf -M 1
 ```
-
-## CI/CD
-
-This project uses GitHub Actions for continuous integration and delivery:
-
-1. **Rust CI**: Runs tests and code quality checks
-2. **Cross-Platform Build**: Builds binaries for multiple platforms (Linux x86_64/ARM64, macOS x86_64/ARM64)
-3. **Docker Build & Publish**: Builds multi-architecture Docker images and pushes them to GitHub Container Registry
-
-Releases are automatically created when tags starting with `v` are pushed to the repository.
 
 ## License
 

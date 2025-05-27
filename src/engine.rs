@@ -91,9 +91,9 @@ impl Engine {
         info!("Starting MTProxy engine");
 
         // Start network listeners
-        if !self.args.http_ports.is_empty() {
+        if !self.args.port.is_empty() {
             self.network_manager
-                .start_listeners(&self.args.http_ports)
+                .start_listeners(&self.args.port)
                 .await
                 .context("Failed to start network listeners")?;
         } else {
@@ -135,9 +135,9 @@ impl Engine {
             info!("Starting worker {}", worker_id);
 
             let network_manager = self.network_manager.clone();
-            let http_ports: Vec<u16> = self
+            let port: Vec<u16> = self
                 .args
-                .http_ports
+                .port
                 .iter()
                 .filter_map(|&port| {
                     // Prevent port overflow - max valid port is 65535
@@ -156,7 +156,7 @@ impl Engine {
                 .collect();
 
             tokio::spawn(async move {
-                if let Err(e) = network_manager.start_listeners(&http_ports).await {
+                if let Err(e) = network_manager.start_listeners(&port).await {
                     error!("Worker {} failed: {}", worker_id, e);
                 }
             });
@@ -242,7 +242,7 @@ impl Engine {
     fn print_connection_info(&self) {
         info!("=== MTProxy Connection Information ===");
 
-        for &port in &self.args.http_ports {
+        for &port in &self.args.port {
             info!("Listening on port: {}", port);
         }
 
@@ -261,7 +261,7 @@ impl Engine {
                 info!("  Secret {}: {}", i + 1, secret);
 
                 // Generate example connection URLs with real server address
-                for &port in &self.args.http_ports {
+                for &port in &self.args.port {
                     let url = format!(
                         "tg://proxy?server={}&port={}&secret={}",
                         server_address, port, secret
@@ -279,7 +279,7 @@ impl Engine {
             info!("");
             info!("🔧 Alternative setup:");
             info!("   Server: {}", server_address);
-            info!("   Port: {}", self.args.http_ports.first().unwrap_or(&443));
+            info!("   Port: {}", self.args.port.first().unwrap_or(&443));
             info!(
                 "   Secret: {}",
                 self.args.secrets.first().unwrap_or(&"N/A".to_string())
@@ -287,7 +287,7 @@ impl Engine {
             info!("");
             info!("🛡️  Random Padding (for ISP bypass):");
             if let Some(secret) = self.args.secrets.first() {
-                for &port in &self.args.http_ports {
+                for &port in &self.args.port {
                     let padded_url = format!(
                         "tg://proxy?server={}&port={}&secret=dd{}",
                         server_address, port, secret
@@ -306,7 +306,7 @@ impl Engine {
                 )
             {
                 let secrets = self.args.secrets.clone();
-                let ports = self.args.http_ports.clone();
+                let ports = self.args.port.clone();
                 tokio::spawn(async move {
                     if let Ok(public_ip) = crate::utils::network::get_public_ip().await {
                         info!("Detected public IP address: {}", public_ip);
@@ -420,7 +420,7 @@ impl Engine {
             },
             "config": {
                 "secrets_count": self.args.secrets.len(),
-                "http_ports": self.args.http_ports,
+                "port": self.args.port,
                 "workers": self.args.workers,
                 "domains": self.args.domains
             }
@@ -487,11 +487,11 @@ pub mod utils {
         }
 
         // Check ports
-        if args.http_ports.is_empty() {
+        if args.port.is_empty() {
             anyhow::bail!("Must specify at least one HTTP port");
         }
 
-        for &port in &args.http_ports {
+        for &port in &args.port {
             if port < 1024 && !is_running_as_root() {
                 anyhow::bail!("Port {} requires root privileges", port);
             }
@@ -680,7 +680,7 @@ mod tests {
         let args = ProxyArgs {
             username: Some("test".to_string()),
             stats_port: 8888,
-            http_ports: vec![8080],
+            port: vec![8080],
             secrets: vec!["deadbeefcafebabe1234567890abcdef".to_string()],
             proxy_tag: None,
             domains: vec![],
@@ -714,7 +714,7 @@ mod tests {
         let args = ProxyArgs {
             username: None,
             stats_port: 8888,
-            http_ports: vec![60000], // This + worker_id * 1000 could overflow
+            port: vec![60000], // This + worker_id * 1000 could overflow
             secrets: vec!["deadbeefcafebabe1234567890abcdef".to_string()],
             proxy_tag: None,
             domains: vec![],
@@ -747,7 +747,7 @@ mod tests {
         let args = ProxyArgs {
             username: None,
             stats_port: 8888,
-            http_ports: vec![8080], // Safe base port
+            port: vec![8080], // Safe base port
             secrets: vec!["deadbeefcafebabe1234567890abcdef".to_string()],
             proxy_tag: None,
             domains: vec![],
@@ -772,7 +772,7 @@ mod tests {
         ProxyArgs {
             username: Some("test".to_string()),
             stats_port: 8888,
-            http_ports: vec![8080], // Use non-privileged port for tests
+            port: vec![8080], // Use non-privileged port for tests
             secrets: vec!["deadbeefcafebabe1234567890abcdef".to_string()],
             proxy_tag: None,
             domains: vec![],
@@ -807,7 +807,7 @@ mod tests {
     #[test]
     fn test_port_overflow_validation() {
         let mut args = create_test_args_no_file();
-        args.http_ports = vec![60000];
+        args.port = vec![60000];
         args.workers = 10; // This would cause overflow
 
         let result = utils::validate_config(&args);

@@ -46,10 +46,9 @@ echo "=== Starting MTProxy-RS ==="
 
 # Use environment variables for configuration with sensible defaults
 STATS_PORT=${STATS_PORT:-8888}
-HTTP_PORTS=${HTTP_PORTS:-443}
+PORT=${PORT:-443}
 WORKERS=${WORKERS:-1}
 RUST_LOG=${RUST_LOG:-info}
-PORT=${PORT:-443}
 
 # Generate SECRET if not provided
 if [ -z "$SECRET" ]; then
@@ -62,7 +61,7 @@ fi
 EXTRA_ARGS=${@:-}
 
 # Build the command
-CMD="mtproxy-rs --stats-port $STATS_PORT --http-ports $HTTP_PORTS -M $WORKERS --mtproto-secret $SECRET"
+CMD="mtproxy-rs --stats-port $STATS_PORT --port $PORT -M $WORKERS --mtproto-secret $SECRET"
 
 # Add TAG if provided
 if [ -n "$TAG" ]; then

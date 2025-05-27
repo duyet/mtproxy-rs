@@ -24,7 +24,7 @@ const DEFAULT_PING_INTERVAL: f64 = 60.0;
 pub struct ProxyArgs {
     pub username: Option<String>,
     pub stats_port: u16,
-    pub http_ports: Vec<u16>,
+    pub port: Vec<u16>,
     pub secrets: Vec<String>,
     pub proxy_tag: Option<String>,
     pub domains: Vec<String>,
@@ -59,11 +59,11 @@ fn build_cli() -> Command {
                 .value_parser(clap::value_parser!(u16).range(1..=65535)),
         )
         .arg(
-            Arg::new("http_ports")
+            Arg::new("port")
                 .short('H')
-                .long("http-ports")
+                .long("port")
                 .value_name("PORT")
-                .help("Client HTTP port (can be specified multiple times)")
+                .help("Port to listen for MTProto connections (can be specified multiple times, default: 443, can also be set via env PORT)")
                 .action(clap::ArgAction::Append)
                 .value_parser(clap::value_parser!(u16).range(1..=65535)),
         )
@@ -180,10 +180,21 @@ fn parse_args() -> Result<ProxyArgs> {
     let username = matches.get_one::<String>("username").cloned();
     let stats_port = matches.get_one::<u16>("stats_port").copied().unwrap();
 
-    let http_ports = matches
-        .get_many::<u16>("http_ports")
+    let mut port = matches
+        .get_many::<u16>("port")
         .map(|values| values.copied().collect::<Vec<_>>())
         .unwrap_or_default();
+
+    if port.is_empty() {
+        if let Ok(env_port) = std::env::var("PORT") {
+            if let Ok(port_num) = env_port.parse::<u16>() {
+                port = vec![port_num];
+            }
+        }
+    }
+    if port.is_empty() {
+        port = vec![443];
+    }
 
     let secrets: Vec<String> = matches
         .get_many::<String>("secret")
@@ -251,7 +262,7 @@ fn parse_args() -> Result<ProxyArgs> {
     Ok(ProxyArgs {
         username,
         stats_port,
-        http_ports,
+        port,
         secrets,
         proxy_tag,
         domains,
@@ -540,7 +551,7 @@ mod tests {
     fn test_cli_parsing_multiple_ports() {
         let app = build_cli();
 
-        // Test with multiple HTTP ports
+        // Test with multiple ports
         let matches = app
             .clone()
             .try_get_matches_from([
@@ -557,11 +568,7 @@ mod tests {
             ])
             .unwrap();
 
-        let ports: Vec<u16> = matches
-            .get_many::<u16>("http_ports")
-            .unwrap()
-            .copied()
-            .collect();
+        let ports: Vec<u16> = matches.get_many::<u16>("port").unwrap().copied().collect();
         assert_eq!(ports.len(), 3);
         assert!(ports.contains(&443));
         assert!(ports.contains(&8080));
@@ -661,11 +668,7 @@ mod tests {
         );
         assert_eq!(matches.get_one::<u16>("stats_port"), Some(&9999));
 
-        let ports: Vec<u16> = matches
-            .get_many::<u16>("http_ports")
-            .unwrap()
-            .copied()
-            .collect();
+        let ports: Vec<u16> = matches.get_many::<u16>("port").unwrap().copied().collect();
         assert_eq!(ports.len(), 2);
 
         let secrets: Vec<&String> = matches.get_many::<String>("secret").unwrap().collect();
@@ -846,7 +849,7 @@ mod tests {
                 "nobody",
                 "--stats-port",
                 "8888",
-                "--http-ports",
+                "--port",
                 "443",
                 "--mtproto-secret",
                 "deadbeefcafebabe1234567890abcdef",

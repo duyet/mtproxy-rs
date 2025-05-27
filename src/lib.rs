@@ -21,7 +21,7 @@ pub use crate::engine::Engine;
 pub struct ProxyArgs {
     pub username: Option<String>,
     pub stats_port: u16,
-    pub http_ports: Vec<u16>,
+    pub port: Vec<u16>,
     pub secrets: Vec<String>,
     pub proxy_tag: Option<String>,
     pub domains: Vec<String>,
