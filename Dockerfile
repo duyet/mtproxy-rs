@@ -2,9 +2,7 @@
 FROM rust:1.87-slim AS builder
 
 # Install dependencies for building
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y \
     pkg-config \
     libssl-dev \
     libc6-dev \
@@ -35,9 +33,7 @@ RUN cargo build --release
 FROM debian:bookworm-slim
 
 # Install runtime dependencies for IP detection and networking
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y \
     ca-certificates \
     curl \
     net-tools \

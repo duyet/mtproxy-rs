@@ -422,6 +422,11 @@ impl MtProtoProxy {
         (client_count, server_count)
     }
 
+    /// Get proxy secrets for authentication
+    pub fn get_proxy_secrets(&self) -> &Vec<[u8; 16]> {
+        &self.proxy_secrets
+    }
+
     pub async fn process_client_message(
         &self,
         _conn_id: u64,

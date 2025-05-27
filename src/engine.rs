@@ -100,6 +100,19 @@ impl Engine {
             warn!("No HTTP ports specified, proxy will not accept connections");
         }
 
+        // Start TCP ping timer for connection keepalive
+        if self.args.ping_interval > 0.0 {
+            info!(
+                "Starting TCP ping timer with interval: {:.1} seconds",
+                self.args.ping_interval
+            );
+            self.network_manager
+                .start_tcp_ping_timer(self.args.ping_interval)
+                .await;
+        } else {
+            info!("TCP ping disabled (interval set to 0)");
+        }
+
         // Start statistics server
         let stats_server = self.stats_server.clone();
         let stats_port = self.args.stats_port;

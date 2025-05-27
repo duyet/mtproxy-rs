@@ -77,6 +77,9 @@ impl JobManager {
                     _ = cleanup_interval.tick() => {
                         debug!("Running connection cleanup");
 
+                        // Clean up dead connections
+                        network_manager.cleanup_dead_connections().await;
+
                         // Get statistics about connections
                         let active_connections = network_manager.get_active_connections().await;
                         let stats = network_manager.get_stats();

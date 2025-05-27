@@ -277,6 +277,36 @@ fn parse_args() -> Result<ProxyArgs> {
     })
 }
 
+/// Initialize logging with tracing (default level: INFO)
+fn init_logging() {
+    use tracing_subscriber::filter::{EnvFilter, LevelFilter};
+    use tracing_subscriber::prelude::*;
+
+    // Create an EnvFilter with INFO as default level
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
+
+    // Create a tracing subscriber
+    let subscriber = tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(env_filter);
+
+    // Set the subscriber as the global default
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
+}
+
+/// Alternative: simple tracing initialization (deprecated)
+#[allow(dead_code)]
+fn init_tracing_simple() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+}
+
 fn generate_key() -> String {
     let mut key = [0u8; 16];
     getrandom::getrandom(&mut key).expect("Failed to generate random bytes");
@@ -336,12 +366,11 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // Initialize tracing
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .init();
+    // Initialize logging with INFO as default level
+    init_logging();
 
     info!("Starting mtproxy-rs v{}", VERSION);
+    info!("Logging system initialized with tracing and INFO default level");
 
     // Load or auto-download configuration
     let config = if let Some(ref config_file) = args.config_file {
