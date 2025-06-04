@@ -1,11 +1,11 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use grammers_crypto::AuthKey;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info};
 
 // For now, we'll use a simple u64 instead of MsgId
 type MsgId = u64;
@@ -228,12 +228,12 @@ impl MtProtoProxy {
         if data.len() == 12 {
             let mut cursor = data.clone();
             let packet_type = cursor.get_u32_le();
-            
+
             match packet_type {
                 RPC_PING => {
                     let ping_id = cursor.get_u64_le();
                     info!("Received RPC_PING with ID: {}", ping_id);
-                    
+
                     // For ping packets, we should respond with pong
                     // But for now, just parse it as a regular message
                     return Ok(Some(MtProtoMessage {
@@ -247,7 +247,7 @@ impl MtProtoProxy {
                 RPC_PONG => {
                     let pong_id = cursor.get_u64_le();
                     debug!("Received RPC_PONG with ID: {}", pong_id);
-                    
+
                     return Ok(Some(MtProtoMessage {
                         auth_key_id: 0,
                         message_id: pong_id,
@@ -276,13 +276,13 @@ impl MtProtoProxy {
             debug!("Encrypted message with auth_key_id: {}", auth_key_id);
             // For encrypted messages, we need more complex parsing
             // For now, treat as opaque data to be forwarded
-            return Ok(Some(MtProtoMessage {
+            Ok(Some(MtProtoMessage {
                 auth_key_id,
                 message_id: 0, // Will be extracted from decrypted content
                 sequence_number: 0,
                 data: data.clone(),
                 encrypted: true,
-            }));
+            }))
         } else {
             // Unencrypted message
             if cursor.remaining() < 12 {
@@ -298,17 +298,21 @@ impl MtProtoProxy {
             );
 
             if cursor.remaining() < message_length as usize {
-                debug!("Incomplete message: expected {} bytes, got {}", message_length, cursor.remaining());
+                debug!(
+                    "Incomplete message: expected {} bytes, got {}",
+                    message_length,
+                    cursor.remaining()
+                );
                 return Ok(None);
             }
 
-            return Ok(Some(MtProtoMessage {
+            Ok(Some(MtProtoMessage {
                 auth_key_id,
                 message_id,
                 sequence_number: 0,
                 data: data.clone(),
                 encrypted: false,
-            }));
+            }))
         }
     }
 

@@ -434,16 +434,23 @@ async fn main() -> Result<()> {
     }
 
     // Print final configuration similar to C version
-    let external_ip = crate::utils::network::get_public_ip().await
+    let external_ip = crate::utils::network::get_public_ip()
+        .await
         .map(|ip| ip.to_string())
         .unwrap_or_else(|_| "0.0.0.0".to_string());
     let port = args.port.first().copied().unwrap_or(443);
-    
+
     println!("[*] Final configuration:");
     for (i, secret) in args.secrets.iter().enumerate() {
         println!("[*]   Secret {}: {}", i + 1, secret);
         println!("[*]   tg:// link for secret {} auto configuration: tg://proxy?server={}&port={}&secret={}", i + 1, external_ip, port, secret);
-        println!("[*]   t.me link for secret {}: https://t.me/proxy?server={}&port={}&secret={}", i + 1, external_ip, port, secret);
+        println!(
+            "[*]   t.me link for secret {}: https://t.me/proxy?server={}&port={}&secret={}",
+            i + 1,
+            external_ip,
+            port,
+            secret
+        );
     }
     if args.proxy_tag.is_some() {
         println!("[*]   Tag: {}", args.proxy_tag.as_ref().unwrap());

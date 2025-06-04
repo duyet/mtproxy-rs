@@ -3,7 +3,6 @@ use std::sync::Arc;
 use tokio::signal;
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
-use chrono;
 
 use crate::config::Config;
 use crate::mtproto::MtProtoProxy;
@@ -90,26 +89,42 @@ impl Engine {
     /// Run the proxy engine
     pub async fn run(&mut self) -> Result<()> {
         // Print engine startup info similar to C version
-        let local_ip = crate::utils::network::get_local_ip().unwrap_or("127.0.0.1".parse().unwrap());
+        let local_ip =
+            crate::utils::network::get_local_ip().unwrap_or("127.0.0.1".parse().unwrap());
         let pid = std::process::id();
-        let process_id = format!("{}:{}:{}:{}", local_ip, 2398, pid, crate::utils::time::now_timestamp());
-        
-        println!("[7][{}] Invoking engine mtproxy-rs v{} compiled at {} by rustc 1.87.0 64-bit after commit deadbeef", 
+        let process_id = format!(
+            "{}:{}:{}:{}",
+            local_ip,
+            2398,
+            pid,
+            crate::utils::time::now_timestamp()
+        );
+
+        println!("[7][{}] Invoking engine mtproxy-rs v{} compiled at Feb 28 2020 12:17:45 by rustc 1.87.0 64-bit after commit deadbeef", 
                  chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%6f local"),
-                 env!("CARGO_PKG_VERSION"),
-                 "Feb 28 2020 12:17:45");
-        
-        println!("[7][{}] config_filename = '{}'", 
-                 chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%6f local"),
-                 self.args.config_file.as_ref().map(|p| p.display().to_string()).unwrap_or("None".to_string()));
-        
-        println!("[7][{}] creating {} workers", 
-                 chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%6f local"),
-                 self.args.workers);
-        
-        println!("[7][{}] Started as [{}]", 
-                 chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%6f local"),
-                 process_id);
+                 env!("CARGO_PKG_VERSION"));
+
+        println!(
+            "[7][{}] config_filename = '{}'",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%6f local"),
+            self.args
+                .config_file
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or("None".to_string())
+        );
+
+        println!(
+            "[7][{}] creating {} workers",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%6f local"),
+            self.args.workers
+        );
+
+        println!(
+            "[7][{}] Started as [{}]",
+            chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%6f local"),
+            process_id
+        );
 
         // Start network listeners
         if !self.args.port.is_empty() {
@@ -118,7 +133,7 @@ impl Engine {
                 .start_listeners(&self.args.port)
                 .await
                 .context("Failed to start network listeners")?;
-            
+
             // Log each listening port
             for &port in &self.args.port {
                 info!("Listening on port {} (MTProxy connections)", port);
@@ -133,7 +148,8 @@ impl Engine {
                 "Starting TCP ping timer with interval: {:.1} seconds",
                 self.args.ping_interval
             );
-            let _ = self.network_manager
+            let _ = self
+                .network_manager
                 .start_tcp_ping_timer(self.args.ping_interval)
                 .await;
         } else {
@@ -153,12 +169,15 @@ impl Engine {
 
         // Start worker processes
         self.start_workers().await?;
-        
+
         // Add configuration reload messages similar to C version
-        let config_file = self.args.config_file.as_ref()
+        let config_file = self
+            .args
+            .config_file
+            .as_ref()
             .map(|p| p.display().to_string())
             .unwrap_or_else(|| "auto-downloaded".to_string());
-        
+
         for worker_id in 0..self.args.workers {
             let pid = std::process::id() + worker_id;
             println!("[{}][{}] configuration file {} re-read successfully (752 bytes parsed), new configuration active", 
@@ -166,13 +185,15 @@ impl Engine {
                      chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%6f local"),
                      config_file);
         }
-        
+
         // Add main loop messages for each worker
         for worker_id in 0..self.args.workers {
             let pid = std::process::id() + worker_id;
-            println!("[{}][{}] main loop", 
-                     pid % 100,
-                     chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%6f local"));
+            println!(
+                "[{}][{}] main loop",
+                pid % 100,
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%6f local")
+            );
         }
 
         // Setup signal handlers
@@ -192,16 +213,25 @@ impl Engine {
     /// Start worker processes
     async fn start_workers(&self) -> Result<()> {
         // Print worker startup messages similar to C version
-        let local_ip = crate::utils::network::get_local_ip().unwrap_or("127.0.0.1".parse().unwrap());
-        
+        let local_ip =
+            crate::utils::network::get_local_ip().unwrap_or("127.0.0.1".parse().unwrap());
+
         for worker_id in 0..self.args.workers {
             let pid = std::process::id() + worker_id;
-            let process_id = format!("{}:{}:{}:{}", local_ip, 2398, pid, crate::utils::time::now_timestamp());
-            
-            println!("[{}][{}] Started as [{}]", 
-                     pid % 100,
-                     chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%6f local"),
-                     process_id);
+            let process_id = format!(
+                "{}:{}:{}:{}",
+                local_ip,
+                2398,
+                pid,
+                crate::utils::time::now_timestamp()
+            );
+
+            println!(
+                "[{}][{}] Started as [{}]",
+                pid % 100,
+                chrono::Local::now().format("%Y-%m-%d %H:%M:%S.%6f local"),
+                process_id
+            );
 
             if worker_id > 0 {
                 let network_manager = self.network_manager.clone();
