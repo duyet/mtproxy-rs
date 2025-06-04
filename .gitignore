@@ -1,4 +1,7 @@
-/MTProxy-c
+# /MTProxy-c
 /target
 proxy-multi.conf
 proxy-secret
+*.log
+__pycache__
+*.pyc

@@ -1,14 +1,18 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use grammers_crypto::AuthKey;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, error, info, warn};
 
 // For now, we'll use a simple u64 instead of MsgId
 type MsgId = u64;
+
+// MTProto RPC constants (matching C version)
+const RPC_PING: u32 = 0x5730a2df;
+const RPC_PONG: u32 = 0x8430eaa7;
 
 // Transport types are available from grammers_mtproto if needed
 
@@ -214,52 +218,97 @@ impl MtProtoProxy {
         _conn_id: u64,
         data: &Bytes,
     ) -> Result<Option<MtProtoMessage>> {
-        if data.len() < 20 {
+        if data.len() < 8 {
             return Ok(None);
         }
 
-        let mut cursor = data.as_ref();
+        debug!("Parsing MTProto message: {} bytes", data.len());
+
+        // Check for RPC ping/pong packets (12 bytes each)
+        if data.len() == 12 {
+            let mut cursor = data.clone();
+            let packet_type = cursor.get_u32_le();
+            
+            match packet_type {
+                RPC_PING => {
+                    let ping_id = cursor.get_u64_le();
+                    info!("Received RPC_PING with ID: {}", ping_id);
+                    
+                    // For ping packets, we should respond with pong
+                    // But for now, just parse it as a regular message
+                    return Ok(Some(MtProtoMessage {
+                        auth_key_id: 0, // RPC ping doesn't use auth_key_id
+                        message_id: ping_id,
+                        sequence_number: 0,
+                        data: data.clone(),
+                        encrypted: false,
+                    }));
+                }
+                RPC_PONG => {
+                    let pong_id = cursor.get_u64_le();
+                    debug!("Received RPC_PONG with ID: {}", pong_id);
+                    
+                    return Ok(Some(MtProtoMessage {
+                        auth_key_id: 0,
+                        message_id: pong_id,
+                        sequence_number: 0,
+                        data: data.clone(),
+                        encrypted: false,
+                    }));
+                }
+                _ => {
+                    // Not a ping/pong, continue with regular parsing
+                }
+            }
+        }
+
+        // Try to parse as regular MTProto message
+        let mut cursor = data.clone();
 
         // Read auth_key_id (8 bytes)
+        if cursor.remaining() < 8 {
+            return Ok(None);
+        }
         let auth_key_id = cursor.get_i64_le();
 
-        if auth_key_id == 0 {
+        // Check if this is an encrypted message (auth_key_id != 0)
+        if auth_key_id != 0 {
+            debug!("Encrypted message with auth_key_id: {}", auth_key_id);
+            // For encrypted messages, we need more complex parsing
+            // For now, treat as opaque data to be forwarded
+            return Ok(Some(MtProtoMessage {
+                auth_key_id,
+                message_id: 0, // Will be extracted from decrypted content
+                sequence_number: 0,
+                data: data.clone(),
+                encrypted: true,
+            }));
+        } else {
             // Unencrypted message
-            let message_id = cursor.get_i64_le() as u64;
-            let message_length = cursor.get_u32_le() as usize;
-
-            if cursor.len() < message_length {
+            if cursor.remaining() < 12 {
                 return Ok(None);
             }
 
-            let message_data = Bytes::copy_from_slice(&cursor[..message_length]);
+            let message_id = cursor.get_u64_le();
+            let message_length = cursor.get_u32_le();
 
-            Ok(Some(MtProtoMessage {
+            debug!(
+                "Unencrypted message: auth_key_id={}, message_id={}, length={}",
+                auth_key_id, message_id, message_length
+            );
+
+            if cursor.remaining() < message_length as usize {
+                debug!("Incomplete message: expected {} bytes, got {}", message_length, cursor.remaining());
+                return Ok(None);
+            }
+
+            return Ok(Some(MtProtoMessage {
                 auth_key_id,
                 message_id,
                 sequence_number: 0,
-                data: message_data,
+                data: data.clone(),
                 encrypted: false,
-            }))
-        } else {
-            // Encrypted message - requires decryption
-            if data.len() < 24 {
-                return Ok(None);
-            }
-
-            // This is where we'd normally decrypt, but for a proxy
-            // we mainly need to forward the encrypted data as-is
-            let _message_key = &data[8..24];
-            let encrypted_data = &data[24..];
-
-            // For proxy purposes, we create a message with the encrypted payload
-            Ok(Some(MtProtoMessage {
-                auth_key_id,
-                message_id: 0, // We can't read this from encrypted data
-                sequence_number: 0,
-                data: Bytes::copy_from_slice(encrypted_data),
-                encrypted: true,
-            }))
+            }));
         }
     }
 

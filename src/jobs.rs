@@ -70,12 +70,12 @@ impl JobManager {
         tokio::spawn(async move {
             let mut cleanup_interval = interval(Duration::from_secs(60));
 
-            info!("Connection cleanup job started");
+            info!("Connection cleanup job started (60s interval)");
 
             loop {
                 tokio::select! {
                     _ = cleanup_interval.tick() => {
-                        debug!("Running connection cleanup");
+                        debug!("Running connection cleanup cycle");
 
                         // Clean up dead connections
                         network_manager.cleanup_dead_connections().await;
@@ -86,14 +86,36 @@ impl JobManager {
 
                         let total = stats.total_connections.load(std::sync::atomic::Ordering::Relaxed);
                         let errors = stats.connection_errors.load(std::sync::atomic::Ordering::Relaxed);
+                        let auth_failures = stats.authentication_failures.load(std::sync::atomic::Ordering::Relaxed);
 
-                        debug!("Connection stats: active={}, total={}, errors={}",
-                               active_connections, total, errors);
+                        debug!(
+                            "Connection stats: active={}, total={}, errors={}, auth_failures={}",
+                            active_connections, total, errors, auth_failures
+                        );
 
                         // Log warning if error rate is high
                         if total > 100 && (errors as f64 / total as f64) > 0.1 {
-                            warn!("High connection error rate: {:.1}% ({}/{})",
-                                  (errors as f64 / total as f64) * 100.0, errors, total);
+                            warn!(
+                                "High connection error rate: {:.1}% ({}/{})",
+                                (errors as f64 / total as f64) * 100.0, errors, total
+                            );
+                        }
+
+                        // Log warning if authentication failure rate is high
+                        if total > 50 && (auth_failures as f64 / total as f64) > 0.2 {
+                            warn!(
+                                "High authentication failure rate: {:.1}% ({}/{})",
+                                (auth_failures as f64 / total as f64) * 100.0, auth_failures, total
+                            );
+                        }
+
+                        // Log periodic status if we have active connections
+                        if active_connections > 0 {
+                            debug!(
+                                "Proxy status: {} active connections, {:.1} MB forwarded",
+                                active_connections,
+                                stats.bytes_forwarded.load(std::sync::atomic::Ordering::Relaxed) as f64 / 1024.0 / 1024.0
+                            );
                         }
                     }
                     _ = shutdown_rx.recv() => {

@@ -1634,6 +1634,7 @@ dependencies = [
  "criterion",
  "crossbeam",
  "crossbeam-channel",
+ "ctr",
  "dashmap",
  "flate2",
  "futures",

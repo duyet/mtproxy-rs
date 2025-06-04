@@ -18,7 +18,7 @@ use config::Config;
 use engine::Engine;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
-const DEFAULT_PING_INTERVAL: f64 = 60.0;
+const DEFAULT_PING_INTERVAL: f64 = 5.0;
 
 #[derive(Debug)]
 pub struct ProxyArgs {
@@ -369,6 +369,12 @@ async fn main() -> Result<()> {
     // Initialize logging with INFO as default level
     init_logging();
 
+    // Print initial header similar to C version
+    println!("####");
+    println!("#### Telegram Proxy");
+    println!("####");
+    println!();
+
     info!("Starting mtproxy-rs v{}", VERSION);
     info!("Logging system initialized with tracing and INFO default level");
 
@@ -421,61 +427,33 @@ async fn main() -> Result<()> {
             aes_secret_raw.len()
         );
     } else if args.secrets.is_empty() {
-        // Try to auto-download proxy secret if no secrets specified and no AES file provided
-        info!("No secrets specified, attempting to auto-download proxy secret from Telegram servers...");
-
-        match Config::download_proxy_secret().await {
-            Ok(aes_secret_raw) => {
-                info!("Downloaded raw secret: {} bytes", aes_secret_raw.len());
-                info!(
-                    "Downloaded secret bytes: {:02x?}",
-                    &aes_secret_raw[..std::cmp::min(32, aes_secret_raw.len())]
-                );
-
-                // Take only the first 16 bytes (like the C version)
-                let aes_secret = if aes_secret_raw.len() >= 16 {
-                    &aes_secret_raw[..16]
-                } else {
-                    anyhow::bail!(
-                        "Downloaded secret must contain at least 16 bytes, got {}",
-                        aes_secret_raw.len()
-                    );
-                };
-
-                // Convert binary secret to hex string for compatibility with existing code
-                let aes_secret_hex = hex::encode(aes_secret);
-                info!("Converted secret to hex: {}", aes_secret_hex);
-                args.secrets.push(aes_secret_hex);
-                info!(
-                    "Downloaded proxy secret ({} bytes, using first 16)",
-                    aes_secret_raw.len()
-                );
-            }
-            Err(e) => {
-                warn!("Failed to auto-download proxy secret: {}", e);
-                warn!("Auto-download endpoints may not be available. Generating a random secret for testing...");
-
-                // Generate a random secret for testing/development
-                let random_secret = generate_key();
-                warn!("Generated random secret: {}", random_secret);
-                warn!("⚠️  WARNING: This is a random secret for testing only!");
-                warn!("⚠️  For production use, specify a secret with -S or --aes-pwd");
-
-                args.secrets.push(random_secret);
-            }
-        }
+        // Generate random secret like C version when no secret provided
+        println!("[+] No secret passed. Will generate 1 random ones.");
+        let random_secret = generate_key();
+        args.secrets.push(random_secret);
     }
 
-    // Debug log all configured secrets
-    info!("Final configured secrets:");
+    // Print final configuration similar to C version
+    let external_ip = crate::utils::network::get_public_ip().await
+        .map(|ip| ip.to_string())
+        .unwrap_or_else(|_| "0.0.0.0".to_string());
+    let port = args.port.first().copied().unwrap_or(443);
+    
+    println!("[*] Final configuration:");
     for (i, secret) in args.secrets.iter().enumerate() {
-        info!("  Secret {}: {} (length: {})", i + 1, secret, secret.len());
-        if let Ok(decoded) = hex::decode(secret) {
-            info!("    Decoded: {:02x?}", decoded);
-        } else {
-            warn!("    Invalid hex format!");
-        }
+        println!("[*]   Secret {}: {}", i + 1, secret);
+        println!("[*]   tg:// link for secret {} auto configuration: tg://proxy?server={}&port={}&secret={}", i + 1, external_ip, port, secret);
+        println!("[*]   t.me link for secret {}: https://t.me/proxy?server={}&port={}&secret={}", i + 1, external_ip, port, secret);
     }
+    if args.proxy_tag.is_some() {
+        println!("[*]   Tag: {}", args.proxy_tag.as_ref().unwrap());
+    } else {
+        println!("[*]   Tag: no tag");
+    }
+    println!("[*]   External IP: {}", external_ip);
+    println!("[*]   Make sure to fix the links in case you run the proxy on a different port.");
+    println!();
+    println!("[+] Starting proxy...");
 
     // Setup signal handlers
     setup_signal_handlers()
