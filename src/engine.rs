@@ -67,8 +67,11 @@ impl Engine {
         // Create network manager
         let network_manager = Arc::new(NetworkManager::new(config.clone(), mtproto_proxy.clone()));
 
-        // Create statistics server
-        let stats_server = Arc::new(StatsServer::new(network_manager.clone()));
+        // Create statistics server with optional authentication
+        let stats_server = Arc::new(StatsServer::new(
+            network_manager.clone(),
+            args.stats_token.clone(),
+        ));
 
         // Create shutdown channel
         let (shutdown_tx, shutdown_rx) = broadcast::channel(16);

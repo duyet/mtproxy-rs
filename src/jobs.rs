@@ -75,10 +75,13 @@ impl JobManager {
             loop {
                 tokio::select! {
                     _ = cleanup_interval.tick() => {
-                        debug!("Running connection cleanup cycle");
+                        debug!("Running connection and auth rate limit cleanup cycle");
 
                         // Clean up dead connections
                         network_manager.cleanup_dead_connections().await;
+
+                        // Clean up expired auth rate limit entries
+                        network_manager.cleanup_auth_rate_limiter().await;
 
                         // Get statistics about connections
                         let active_connections = network_manager.get_active_connections().await;

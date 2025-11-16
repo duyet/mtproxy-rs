@@ -24,6 +24,7 @@ const DEFAULT_PING_INTERVAL: f64 = 5.0;
 pub struct ProxyArgs {
     pub username: Option<String>,
     pub stats_port: u16,
+    pub stats_token: Option<String>,
     pub port: Vec<u16>,
     pub secrets: Vec<String>,
     pub proxy_tag: Option<String>,
@@ -139,6 +140,13 @@ fn build_cli() -> Command {
                 .help("Allow HTTP server to answer stats queries"),
         )
         .arg(
+            Arg::new("stats_token")
+                .long("stats-token")
+                .value_name("TOKEN")
+                .help("Bearer token for stats endpoint authentication (also via STATS_TOKEN env)")
+                .env("STATS_TOKEN"),
+        )
+        .arg(
             Arg::new("ip")
                 .long("ip")
                 .value_name("ADDRESS")
@@ -179,6 +187,7 @@ fn parse_args() -> Result<ProxyArgs> {
     let genkey = matches.get_flag("genkey");
     let username = matches.get_one::<String>("username").cloned();
     let stats_port = matches.get_one::<u16>("stats_port").copied().unwrap();
+    let stats_token = matches.get_one::<String>("stats_token").cloned();
 
     let mut port = matches
         .get_many::<u16>("port")
@@ -262,6 +271,7 @@ fn parse_args() -> Result<ProxyArgs> {
     Ok(ProxyArgs {
         username,
         stats_port,
+        stats_token,
         port,
         secrets,
         proxy_tag,

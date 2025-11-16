@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{broadcast, RwLock};
@@ -30,7 +30,116 @@ const CODE_SET_CLIENT_DH_PARAMS: u32 = 0xf5045f1f;
 const READ_TIMEOUT: Duration = Duration::from_secs(300);
 const CONNECTION_TIMEOUT: Duration = Duration::from_secs(30);
 
+// Rate limiting constants
+const MAX_AUTH_ATTEMPTS: u32 = 5;
+const AUTH_BLOCK_DURATION: Duration = Duration::from_secs(300); // 5 minutes
+const AUTH_ATTEMPT_WINDOW: Duration = Duration::from_secs(60); // 1 minute window
+
 type ConnectionId = u64;
+
+/// Authentication failure tracking per IP
+#[derive(Debug, Clone)]
+struct AuthFailureInfo {
+    attempts: u32,
+    first_attempt: Instant,
+    blocked_until: Option<Instant>,
+}
+
+impl AuthFailureInfo {
+    fn new() -> Self {
+        Self {
+            attempts: 1,
+            first_attempt: Instant::now(),
+            blocked_until: None,
+        }
+    }
+
+    fn is_blocked(&self) -> bool {
+        if let Some(blocked_until) = self.blocked_until {
+            Instant::now() < blocked_until
+        } else {
+            false
+        }
+    }
+
+    fn should_reset(&self) -> bool {
+        Instant::now().duration_since(self.first_attempt) > AUTH_ATTEMPT_WINDOW
+    }
+
+    fn increment(&mut self) {
+        if self.should_reset() {
+            // Reset after window expires
+            self.attempts = 1;
+            self.first_attempt = Instant::now();
+            self.blocked_until = None;
+        } else {
+            self.attempts += 1;
+            if self.attempts >= MAX_AUTH_ATTEMPTS {
+                // Block the IP
+                self.blocked_until = Some(Instant::now() + AUTH_BLOCK_DURATION);
+                warn!(
+                    "IP blocked due to {} failed authentication attempts",
+                    self.attempts
+                );
+            }
+        }
+    }
+}
+
+/// Rate limiter for authentication attempts
+#[derive(Debug)]
+pub struct AuthRateLimiter {
+    failures: Arc<RwLock<HashMap<IpAddr, AuthFailureInfo>>>,
+}
+
+impl AuthRateLimiter {
+    fn new() -> Self {
+        Self {
+            failures: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Check if an IP is currently blocked
+    pub async fn is_blocked(&self, ip: &IpAddr) -> bool {
+        let failures = self.failures.read().await;
+        if let Some(info) = failures.get(ip) {
+            info.is_blocked()
+        } else {
+            false
+        }
+    }
+
+    /// Record a failed authentication attempt
+    pub async fn record_failure(&self, ip: IpAddr) {
+        let mut failures = self.failures.write().await;
+        failures
+            .entry(ip)
+            .and_modify(|info| info.increment())
+            .or_insert_with(AuthFailureInfo::new);
+    }
+
+    /// Record a successful authentication (clears failures)
+    pub async fn record_success(&self, ip: &IpAddr) {
+        let mut failures = self.failures.write().await;
+        failures.remove(ip);
+    }
+
+    /// Clean up expired entries (call periodically)
+    pub async fn cleanup(&self) {
+        let mut failures = self.failures.write().await;
+        failures.retain(|_, info| {
+            // Keep if blocked or within attempt window
+            info.is_blocked() || !info.should_reset()
+        });
+    }
+
+    /// Get statistics
+    pub async fn get_stats(&self) -> (usize, usize) {
+        let failures = self.failures.read().await;
+        let blocked_count = failures.values().filter(|info| info.is_blocked()).count();
+        (failures.len(), blocked_count)
+    }
+}
 
 /// Network statistics
 #[derive(Debug)]
@@ -104,6 +213,8 @@ pub struct NetworkManager {
     stats: Arc<NetworkStats>,
     /// Rate limiter
     rate_limiter: Arc<crate::utils::rate_limit::TokenBucket>,
+    /// Authentication rate limiter
+    auth_rate_limiter: Arc<AuthRateLimiter>,
 }
 
 impl NetworkManager {
@@ -126,6 +237,7 @@ impl NetworkManager {
                 authentication_failures: AtomicU64::new(0),
             }),
             rate_limiter: Arc::new(crate::utils::rate_limit::TokenBucket::new(1000, 100)),
+            auth_rate_limiter: Arc::new(AuthRateLimiter::new()),
         }
     }
 
@@ -380,6 +492,19 @@ impl NetworkManager {
             // **MAIN PROCESSING PIPELINE - Following C MTProxy exactly**
 
             if !client_conn.authenticated {
+                // Check if IP is blocked due to failed authentication attempts
+                let client_ip = client_conn.remote_addr.ip();
+                if self.auth_rate_limiter.is_blocked(&client_ip).await {
+                    warn!(
+                        "socket #{}: ⛔ IP {} is blocked due to too many failed authentication attempts",
+                        connection_id, client_ip
+                    );
+                    self.stats
+                        .authentication_failures
+                        .fetch_add(1, Ordering::Relaxed);
+                    break;
+                }
+
                 // Handle authentication first
                 if let Some(secret) = self.try_authenticate(data) {
                     info!(
@@ -387,6 +512,9 @@ impl NetworkManager {
                         connection_id,
                         &secret[..4]
                     );
+
+                    // Clear any previous auth failures for this IP
+                    self.auth_rate_limiter.record_success(&client_ip).await;
 
                     // Create authenticated client connection
                     let authenticated_client = Arc::new(ClientConnection {
@@ -437,7 +565,14 @@ impl NetworkManager {
                     );
                     continue;
                 } else {
-                    warn!("socket #{}: ❌ Authentication failed", connection_id);
+                    warn!(
+                        "socket #{}: ❌ Authentication failed from IP {}",
+                        connection_id, client_ip
+                    );
+
+                    // Record failed authentication attempt for rate limiting
+                    self.auth_rate_limiter.record_failure(client_ip).await;
+
                     self.stats
                         .authentication_failures
                         .fetch_add(1, Ordering::Relaxed);
@@ -1178,7 +1313,7 @@ impl NetworkManager {
             .as_secs() as u32;
 
         // Allow timestamps within reasonable range (±1 hour)
-        // TEMPORARILY DISABLE timestamp validation for testing
+        // Re-enabled timestamp validation for security
         let time_diff = if timestamp > now {
             timestamp - now
         } else {
@@ -1186,10 +1321,10 @@ impl NetworkManager {
         };
         if time_diff > 3600 {
             debug!(
-                "Timestamp validation failed: {} vs {} (but continuing anyway for testing)",
-                timestamp, now
+                "Timestamp validation failed: {} vs {} (diff: {}s)",
+                timestamp, now, time_diff
             );
-            // return false; // Disabled for testing
+            return false;
         }
 
         // Check for non-zero data (avoid all-zero handshakes)
@@ -1411,6 +1546,20 @@ impl NetworkManager {
         self.cleanup_connections().await;
     }
 
+    /// Cleanup expired auth rate limiter entries
+    pub async fn cleanup_auth_rate_limiter(&self) {
+        self.auth_rate_limiter.cleanup().await;
+
+        // Log statistics
+        let (total_tracked, blocked_count) = self.auth_rate_limiter.get_stats().await;
+        if total_tracked > 0 || blocked_count > 0 {
+            debug!(
+                "Auth rate limiter stats: tracking {} IPs, {} currently blocked",
+                total_tracked, blocked_count
+            );
+        }
+    }
+
     /// Cleanup single connection
     async fn cleanup_connection(&self, connection_id: ConnectionId) {
         debug!("socket #{}: cleaning up connection", connection_id);
@@ -1451,6 +1600,7 @@ impl NetworkManager {
             shutdown_tx: self.shutdown_tx.clone(),
             stats: self.stats.clone(),
             rate_limiter: self.rate_limiter.clone(),
+            auth_rate_limiter: self.auth_rate_limiter.clone(),
         }
     }
 
