@@ -12,7 +12,7 @@ readme = "README.md"
 
 [dependencies]
 # Optimized tokio features - only what we actually use
-tokio = { version = "1.40", features = ["rt-multi-thread", "net", "time", "sync", "signal", "io-util", "macros"] }
+tokio = { version = "1.40", features = ["rt-multi-thread", "net", "time", "sync", "signal", "io-util", "macros", "fs"] }
 tokio-util = "0.7"
 futures = "0.3"
 bytes = "1.7"

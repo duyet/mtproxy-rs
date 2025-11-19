@@ -1,7 +1,7 @@
 use anyhow::Result;
 use axum::{
     extract::Request,
-    http::{HeaderMap, StatusCode},
+    http::StatusCode,
     middleware::{self, Next},
     response::{Html, IntoResponse, Json, Response},
     routing::get,
@@ -147,7 +147,7 @@ pub struct StatsServer {
 
 impl StatsServer {
     pub fn new(network_manager: Arc<NetworkManager>, auth_token: Option<String>) -> Self {
-        if let Some(ref token) = auth_token {
+        if let Some(ref _token) = auth_token {
             info!("Stats endpoint authentication enabled");
         } else {
             warn!("Stats endpoint authentication disabled - consider enabling with --stats-token");
