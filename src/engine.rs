@@ -784,6 +784,7 @@ mod tests {
         let args = ProxyArgs {
             username: Some("test".to_string()),
             stats_port: 8888,
+            stats_token: None,
             port: vec![8080],
             secrets: vec!["deadbeefcafebabe1234567890abcdef".to_string()],
             proxy_tag: None,
@@ -818,6 +819,7 @@ mod tests {
         let args = ProxyArgs {
             username: None,
             stats_port: 8888,
+            stats_token: None,
             port: vec![60000], // This + worker_id * 1000 could overflow
             secrets: vec!["deadbeefcafebabe1234567890abcdef".to_string()],
             proxy_tag: None,
@@ -851,6 +853,7 @@ mod tests {
         let args = ProxyArgs {
             username: None,
             stats_port: 8888,
+            stats_token: None,
             port: vec![8080], // Safe base port
             secrets: vec!["deadbeefcafebabe1234567890abcdef".to_string()],
             proxy_tag: None,
@@ -876,6 +879,7 @@ mod tests {
         ProxyArgs {
             username: Some("test".to_string()),
             stats_port: 8888,
+            stats_token: None,
             port: vec![8080], // Use non-privileged port for tests
             secrets: vec!["deadbeefcafebabe1234567890abcdef".to_string()],
             proxy_tag: None,

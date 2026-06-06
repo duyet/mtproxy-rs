@@ -50,6 +50,7 @@ fn create_test_config() -> Config {
         timeout: 30.0,
         min_connections: 1,
         max_connections: 100,
+        ..Default::default()
     }
 }
 
@@ -58,6 +59,7 @@ fn create_test_args(port: u16) -> ProxyArgs {
     ProxyArgs {
         username: None,
         stats_port: 18888, // Use different port to avoid conflicts
+        stats_token: None,
         port: vec![port],
         secrets: vec![TEST_SECRET.to_string()],
         proxy_tag: None,

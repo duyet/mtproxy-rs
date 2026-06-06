@@ -40,10 +40,12 @@ impl AuthState {
                 if expected.len() != provided_token.len() {
                     return false;
                 }
-                expected.as_bytes()
+                expected
+                    .as_bytes()
                     .iter()
                     .zip(provided_token.as_bytes())
-                    .fold(0u8, |acc, (a, b)| acc | (a ^ b)) == 0
+                    .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+                    == 0
             }
             None => true, // No auth required
         }
@@ -174,18 +176,16 @@ impl StatsServer {
         let protected_routes = Router::new()
             .route("/stats", get(handle_stats))
             .route("/prometheus", get(handle_prometheus))
-            .layer(middleware::from_fn(
-                create_auth_middleware(self.auth_state.clone())
-            ));
+            .layer(middleware::from_fn(create_auth_middleware(
+                self.auth_state.clone(),
+            )));
 
         // Public routes (no auth required)
         let public_routes = Router::new()
             .route("/", get(handle_root))
             .route("/health", get(handle_health));
 
-        let app = Router::new()
-            .merge(protected_routes)
-            .merge(public_routes);
+        let app = Router::new().merge(protected_routes).merge(public_routes);
 
         let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
 
@@ -343,7 +343,8 @@ mtproxy_cpu_usage_percent {}
                 let mut total_rx = 0u64;
                 let mut total_tx = 0u64;
 
-                for line in content.lines().skip(2) { // Skip headers
+                for line in content.lines().skip(2) {
+                    // Skip headers
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() >= 10 {
                         // Skip loopback interface
@@ -387,7 +388,8 @@ mtproxy_cpu_usage_percent {}
 /// Create authentication middleware for protected routes
 fn create_auth_middleware(
     auth_state: Arc<AuthState>,
-) -> impl Fn(Request, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>> + Clone {
+) -> impl Fn(Request, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>
+       + Clone {
     move |req: Request, next: Next| {
         let auth_state = auth_state.clone();
         Box::pin(async move {
@@ -414,8 +416,9 @@ fn create_auth_middleware(
                             StatusCode::UNAUTHORIZED,
                             Json(serde_json::json!({
                                 "error": "Invalid authentication token"
-                            }))
-                        ).into_response()
+                            })),
+                        )
+                            .into_response()
                     }
                 }
                 _ => {

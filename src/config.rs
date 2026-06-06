@@ -154,7 +154,10 @@ impl Config {
                         config.max_global_connections = parts[1]
                             .parse::<u64>()
                             .context("Invalid max_global_connections value")?;
-                        debug!("Set max_global_connections: {}", config.max_global_connections);
+                        debug!(
+                            "Set max_global_connections: {}",
+                            config.max_global_connections
+                        );
                     }
                 }
                 "max_connections_per_ip" => {
@@ -162,7 +165,10 @@ impl Config {
                         config.max_connections_per_ip = parts[1]
                             .parse::<u64>()
                             .context("Invalid max_connections_per_ip value")?;
-                        debug!("Set max_connections_per_ip: {}", config.max_connections_per_ip);
+                        debug!(
+                            "Set max_connections_per_ip: {}",
+                            config.max_connections_per_ip
+                        );
                     }
                 }
                 "read_timeout" => {
@@ -178,7 +184,10 @@ impl Config {
                         config.cleanup_interval_secs = parts[1]
                             .parse::<u64>()
                             .context("Invalid cleanup_interval value")?;
-                        debug!("Set cleanup_interval: {} seconds", config.cleanup_interval_secs);
+                        debug!(
+                            "Set cleanup_interval: {} seconds",
+                            config.cleanup_interval_secs
+                        );
                     }
                 }
                 "proxy_for" => {
@@ -272,7 +281,10 @@ impl Config {
 
         // Set default cluster
         if config.default_cluster_id != -1 {
-            if let Some(cluster) = clusters.iter_mut().find(|c| c.id == config.default_cluster_id) {
+            if let Some(cluster) = clusters
+                .iter_mut()
+                .find(|c| c.id == config.default_cluster_id)
+            {
                 cluster.default = true;
                 debug!("Marked cluster {} as default", config.default_cluster_id);
             }

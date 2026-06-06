@@ -466,11 +466,11 @@ mod tests {
                 }],
                 default: true,
             }],
-
             default_cluster_id: 1,
             timeout: 10.0,
             min_connections: 1,
             max_connections: 10,
+            ..Default::default()
         }
     }
 
