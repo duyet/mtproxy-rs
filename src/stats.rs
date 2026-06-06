@@ -1,7 +1,9 @@
 use anyhow::Result;
 use axum::{
+    extract::Request,
     http::StatusCode,
-    response::{Html, Json},
+    middleware::{self, Next},
+    response::{Html, IntoResponse, Json, Response},
     routing::get,
     Router,
 };
@@ -12,9 +14,43 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::network::NetworkManager;
+
+/// Authentication state for stats endpoint
+#[derive(Clone)]
+struct AuthState {
+    token: Option<String>,
+}
+
+impl AuthState {
+    fn new(token: Option<String>) -> Self {
+        Self { token }
+    }
+
+    fn is_enabled(&self) -> bool {
+        self.token.is_some()
+    }
+
+    fn validate(&self, provided_token: &str) -> bool {
+        match &self.token {
+            Some(expected) => {
+                // Constant-time comparison to prevent timing attacks
+                if expected.len() != provided_token.len() {
+                    return false;
+                }
+                expected
+                    .as_bytes()
+                    .iter()
+                    .zip(provided_token.as_bytes())
+                    .fold(0u8, |acc, (a, b)| acc | (a ^ b))
+                    == 0
+            }
+            None => true, // No auth required
+        }
+    }
+}
 
 /// Connection-level statistics
 #[derive(Debug)]
@@ -108,14 +144,22 @@ pub struct StatsServer {
     network_manager: Arc<NetworkManager>,
     start_time: SystemTime,
     server_stats: Arc<RwLock<HashMap<String, ServerStatus>>>,
+    auth_state: Arc<AuthState>,
 }
 
 impl StatsServer {
-    pub fn new(network_manager: Arc<NetworkManager>) -> Self {
+    pub fn new(network_manager: Arc<NetworkManager>, auth_token: Option<String>) -> Self {
+        if let Some(ref _token) = auth_token {
+            info!("Stats endpoint authentication enabled");
+        } else {
+            warn!("Stats endpoint authentication disabled - consider enabling with --stats-token");
+        }
+
         Self {
             network_manager,
             start_time: SystemTime::now(),
             server_stats: Arc::new(RwLock::new(HashMap::new())),
+            auth_state: Arc::new(AuthState::new(auth_token)),
         }
     }
 
@@ -128,11 +172,20 @@ impl StatsServer {
 
         info!("Starting HTTP stats server on port {}", port);
 
-        let app = Router::new()
-            .route("/", get(handle_root))
+        // Create protected routes with authentication
+        let protected_routes = Router::new()
             .route("/stats", get(handle_stats))
-            .route("/health", get(handle_health))
-            .route("/prometheus", get(handle_prometheus));
+            .route("/prometheus", get(handle_prometheus))
+            .layer(middleware::from_fn(create_auth_middleware(
+                self.auth_state.clone(),
+            )));
+
+        // Public routes (no auth required)
+        let public_routes = Router::new()
+            .route("/", get(handle_root))
+            .route("/health", get(handle_health));
+
+        let app = Router::new().merge(protected_routes).merge(public_routes);
 
         let listener = TcpListener::bind(format!("127.0.0.1:{}", port)).await?;
 
@@ -184,6 +237,8 @@ impl StatsServer {
         let server_stats = self.server_stats.read().await;
         let telegram_servers: Vec<ServerStatus> = server_stats.values().cloned().collect();
 
+        let (network_rx_bytes, network_tx_bytes) = self.get_network_stats();
+
         ProxyStats {
             uptime_seconds: uptime,
             active_connections,
@@ -196,8 +251,8 @@ impl StatsServer {
                 .load(Ordering::Relaxed),
             memory_usage_bytes: self.get_memory_usage(),
             cpu_usage_percent: self.get_cpu_usage(),
-            network_rx_bytes: 0, // TODO: Implement network interface stats
-            network_tx_bytes: 0, // TODO: Implement network interface stats
+            network_rx_bytes,
+            network_tx_bytes,
             telegram_servers,
         }
     }
@@ -255,15 +310,62 @@ mtproxy_cpu_usage_percent {}
 
     /// Get memory usage (simplified implementation)
     fn get_memory_usage(&self) -> u64 {
-        // In a real implementation, you would use system APIs
-        // to get actual memory usage
+        // Read from /proc/self/status on Linux
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(content) = std::fs::read_to_string("/proc/self/status") {
+                for line in content.lines() {
+                    if line.starts_with("VmRSS:") {
+                        if let Some(size_str) = line.split_whitespace().nth(1) {
+                            if let Ok(size_kb) = size_str.parse::<u64>() {
+                                return size_kb * 1024; // Convert KB to bytes
+                            }
+                        }
+                    }
+                }
+            }
+        }
         0
     }
 
     /// Get CPU usage (simplified implementation)
     fn get_cpu_usage(&self) -> f64 {
-        // In a real implementation, you would calculate actual CPU usage
+        // Simplified: would need to track process CPU time over intervals
+        // for accurate measurement
         0.0
+    }
+
+    /// Get network interface statistics
+    fn get_network_stats(&self) -> (u64, u64) {
+        #[cfg(target_os = "linux")]
+        {
+            if let Ok(content) = std::fs::read_to_string("/proc/net/dev") {
+                let mut total_rx = 0u64;
+                let mut total_tx = 0u64;
+
+                for line in content.lines().skip(2) {
+                    // Skip headers
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 10 {
+                        // Skip loopback interface
+                        if parts[0].starts_with("lo:") {
+                            continue;
+                        }
+
+                        // RX bytes is at index 1, TX bytes at index 9
+                        if let Ok(rx) = parts[1].parse::<u64>() {
+                            total_rx += rx;
+                        }
+                        if let Ok(tx) = parts[9].parse::<u64>() {
+                            total_tx += tx;
+                        }
+                    }
+                }
+
+                return (total_rx, total_tx);
+            }
+        }
+        (0, 0)
     }
 
     /// Update server status
@@ -278,7 +380,58 @@ mtproxy_cpu_usage_percent {}
             network_manager: self.network_manager.clone(),
             start_time: self.start_time,
             server_stats: self.server_stats.clone(),
+            auth_state: self.auth_state.clone(),
         }
+    }
+}
+
+/// Create authentication middleware for protected routes
+fn create_auth_middleware(
+    auth_state: Arc<AuthState>,
+) -> impl Fn(Request, Next) -> std::pin::Pin<Box<dyn std::future::Future<Output = Response> + Send>>
+       + Clone {
+    move |req: Request, next: Next| {
+        let auth_state = auth_state.clone();
+        Box::pin(async move {
+            // If auth is not enabled, allow all requests
+            if !auth_state.is_enabled() {
+                return next.run(req).await;
+            }
+
+            // Extract Authorization header
+            let auth_header = req
+                .headers()
+                .get("Authorization")
+                .and_then(|h| h.to_str().ok());
+
+            match auth_header {
+                Some(header) if header.starts_with("Bearer ") => {
+                    let token = &header[7..]; // Skip "Bearer "
+                    if auth_state.validate(token) {
+                        debug!("Stats authentication successful");
+                        next.run(req).await
+                    } else {
+                        warn!("Stats authentication failed: invalid token");
+                        (
+                            StatusCode::UNAUTHORIZED,
+                            Json(serde_json::json!({
+                                "error": "Invalid authentication token"
+                            })),
+                        )
+                            .into_response()
+                    }
+                }
+                _ => {
+                    warn!("Stats authentication failed: missing or malformed Authorization header");
+                    (
+                        StatusCode::UNAUTHORIZED,
+                        Json(serde_json::json!({
+                            "error": "Authentication required. Provide Bearer token in Authorization header"
+                        }))
+                    ).into_response()
+                }
+            }
+        })
     }
 }
 

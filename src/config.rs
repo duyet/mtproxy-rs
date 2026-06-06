@@ -36,6 +36,33 @@ pub struct Config {
     pub min_connections: u32,
     #[allow(dead_code)]
     pub max_connections: u32,
+    // Runtime configuration
+    pub max_global_connections: u64,
+    pub max_connections_per_ip: u64,
+    pub read_timeout_secs: u64,
+    pub connection_timeout_secs: u64,
+    pub cleanup_interval_secs: u64,
+    pub max_auth_attempts: u32,
+    pub auth_block_duration_secs: u64,
+}
+
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            clusters: Vec::new(),
+            default_cluster_id: -1,
+            timeout: 0.3,
+            min_connections: 1,
+            max_connections: 10,
+            max_global_connections: 1000,
+            max_connections_per_ip: 100,
+            read_timeout_secs: 300,
+            connection_timeout_secs: 30,
+            cleanup_interval_secs: 60,
+            max_auth_attempts: 5,
+            auth_block_duration_secs: 300,
+        }
+    }
 }
 
 impl Config {
@@ -62,11 +89,8 @@ impl Config {
     }
 
     pub fn parse_config(content: &str) -> Result<Self> {
+        let mut config = Config::default();
         let mut clusters: Vec<ClusterConfig> = Vec::new();
-        let mut default_cluster_id = -1;
-        let mut timeout = 0.3;
-        let mut min_connections = 1;
-        let mut max_connections = 10;
 
         for line in content.lines() {
             let line = line.trim();
@@ -92,10 +116,10 @@ impl Config {
                 }
                 "default" => {
                     if parts.len() >= 2 {
-                        default_cluster_id = parts[1]
+                        config.default_cluster_id = parts[1]
                             .parse::<i32>()
                             .context("Invalid default cluster ID")?;
-                        info!("Set default cluster ID: {}", default_cluster_id);
+                        info!("Set default cluster ID: {}", config.default_cluster_id);
                     }
                 }
                 "timeout" => {
@@ -105,24 +129,65 @@ impl Config {
                         if !(10..=30000).contains(&timeout_ms) {
                             anyhow::bail!("Invalid timeout: must be between 10 and 30000 ms");
                         }
-                        timeout = timeout_ms as f64 / 1000.0;
-                        debug!("Set timeout: {} seconds", timeout);
+                        config.timeout = timeout_ms as f64 / 1000.0;
+                        debug!("Set timeout: {} seconds", config.timeout);
                     }
                 }
                 "min_connections" => {
                     if parts.len() >= 2 {
-                        min_connections = parts[1]
+                        config.min_connections = parts[1]
                             .parse::<u32>()
                             .context("Invalid min_connections value")?;
-                        debug!("Set min_connections: {}", min_connections);
+                        debug!("Set min_connections: {}", config.min_connections);
                     }
                 }
                 "max_connections" => {
                     if parts.len() >= 2 {
-                        max_connections = parts[1]
+                        config.max_connections = parts[1]
                             .parse::<u32>()
                             .context("Invalid max_connections value")?;
-                        debug!("Set max_connections: {}", max_connections);
+                        debug!("Set max_connections: {}", config.max_connections);
+                    }
+                }
+                "max_global_connections" => {
+                    if parts.len() >= 2 {
+                        config.max_global_connections = parts[1]
+                            .parse::<u64>()
+                            .context("Invalid max_global_connections value")?;
+                        debug!(
+                            "Set max_global_connections: {}",
+                            config.max_global_connections
+                        );
+                    }
+                }
+                "max_connections_per_ip" => {
+                    if parts.len() >= 2 {
+                        config.max_connections_per_ip = parts[1]
+                            .parse::<u64>()
+                            .context("Invalid max_connections_per_ip value")?;
+                        debug!(
+                            "Set max_connections_per_ip: {}",
+                            config.max_connections_per_ip
+                        );
+                    }
+                }
+                "read_timeout" => {
+                    if parts.len() >= 2 {
+                        config.read_timeout_secs = parts[1]
+                            .parse::<u64>()
+                            .context("Invalid read_timeout value")?;
+                        debug!("Set read_timeout: {} seconds", config.read_timeout_secs);
+                    }
+                }
+                "cleanup_interval" => {
+                    if parts.len() >= 2 {
+                        config.cleanup_interval_secs = parts[1]
+                            .parse::<u64>()
+                            .context("Invalid cleanup_interval value")?;
+                        debug!(
+                            "Set cleanup_interval: {} seconds",
+                            config.cleanup_interval_secs
+                        );
                     }
                 }
                 "proxy_for" => {
@@ -215,19 +280,22 @@ impl Config {
         }
 
         // Set default cluster
-        if default_cluster_id != -1 {
-            if let Some(cluster) = clusters.iter_mut().find(|c| c.id == default_cluster_id) {
+        if config.default_cluster_id != -1 {
+            if let Some(cluster) = clusters
+                .iter_mut()
+                .find(|c| c.id == config.default_cluster_id)
+            {
                 cluster.default = true;
-                debug!("Marked cluster {} as default", default_cluster_id);
+                debug!("Marked cluster {} as default", config.default_cluster_id);
             }
         } else {
             // If no default specified, use the first cluster
             if let Some(first_cluster) = clusters.first_mut() {
-                default_cluster_id = first_cluster.id;
+                config.default_cluster_id = first_cluster.id;
                 first_cluster.default = true;
                 warn!(
                     "No default cluster specified, using cluster {}",
-                    default_cluster_id
+                    config.default_cluster_id
                 );
             }
         }
@@ -238,13 +306,8 @@ impl Config {
             anyhow::bail!("No proxy servers found in configuration");
         }
 
-        Ok(Config {
-            clusters,
-            default_cluster_id,
-            timeout,
-            min_connections,
-            max_connections,
-        })
+        config.clusters = clusters;
+        Ok(config)
     }
 
     pub fn get_cluster(&self, id: i32) -> Option<&ClusterConfig> {

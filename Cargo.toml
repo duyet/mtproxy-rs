@@ -11,7 +11,8 @@ categories = ["network-programming", "web-programming"]
 readme = "README.md"
 
 [dependencies]
-tokio = { version = "1.40", features = ["full"] }
+# Optimized tokio features - only what we actually use
+tokio = { version = "1.40", features = ["rt-multi-thread", "net", "time", "sync", "signal", "io-util", "macros", "fs"] }
 tokio-util = "0.7"
 futures = "0.3"
 bytes = "1.7"
@@ -19,7 +20,7 @@ anyhow = "1.0"
 thiserror = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 getrandom = "0.2"
@@ -44,13 +45,13 @@ rustls-pemfile = "2.2"
 webpki-roots = "1.0"
 
 # HTTP server for stats and client for config downloads
-hyper = { version = "1.6", features = ["full"] }
-hyper-util = { version = "0.1", features = ["full"] }
+hyper = { version = "1.6", features = ["http1", "http2", "server", "client"] }
+hyper-util = { version = "0.1", features = ["tokio", "server", "client", "http1", "http2"] }
 http-body-util = "0.1"
 tower = "0.5"
-tower-http = { version = "0.6", features = ["full"] }
+tower-http = { version = "0.6", features = ["trace", "timeout", "limit"] }
 axum = "0.8"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
 url = "2.5"
 base64 = "0.22"
 
